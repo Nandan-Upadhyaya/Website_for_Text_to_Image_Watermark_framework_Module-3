@@ -18,28 +18,22 @@ const TextToImage = () => {
   const datasets = [
     { value: 'bird', label: 'Birds (CUB-200-2011)' },
     { value: 'coco', label: 'COCO Dataset' },
-    { value: 'flower', label: 'Oxford Flowers' }
+    
   ];
 
   const examplePrompts = {
     bird: [
-      "A small yellow bird with black wings perched on a branch",
-      "A red cardinal sitting on a snowy pine tree",
+      "this bird is white with brown and has a very short beak.",
+      "this bird has an orange bill, a white belly and white eyebrows.",
       "A blue jay with distinctive crest feathers",
-      "A tiny hummingbird hovering near purple flowers"
+      "this bird is white with red and has a very short beak."
     ],
     coco: [
-      "A cat sitting on a wooden table in a sunny kitchen",
-      "A dog playing fetch in a green park",
-      "A bicycle leaning against a brick wall",
-      "Children playing soccer in a field"
+      "On the plate is eggs,tomatoes sausage, and some bacon.",
+      "Living room with a chair and flat screen television.",
+      "A table prepared with food is seen in this image.",
+      "A brown teddy bear sitting in front of an open book."
     ],
-    flower: [
-      "A single red rose with morning dew drops",
-      "A field of sunflowers facing the sun",
-      "Purple lavender swaying in the breeze",
-      "A bouquet of colorful tulips in spring"
-    ]
   };
 
   const handleGenerate = async () => {
