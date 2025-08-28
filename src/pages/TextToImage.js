@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PhotoIcon, SparklesIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -6,6 +6,7 @@ const TextToImage = () => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState([]);
+  const [serverStatus, setServerStatus] = useState({ status: 'unknown', message: 'Checking server...' });
   const [settings, setSettings] = useState({
     model: 'df-gan',
     dataset: 'bird',
@@ -14,6 +15,8 @@ const TextToImage = () => {
     guidance: 7.5,
     seed: -1
   });
+
+  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
 
   const datasets = [
     { value: 'bird', label: 'Birds (CUB-200-2011)' },
@@ -29,12 +32,42 @@ const TextToImage = () => {
       "this bird is white with red and has a very short beak."
     ],
     coco: [
-      "On the plate is eggs,tomatoes sausage, and some bacon.",
-      "Living room with a chair and flat screen television.",
-      "A table prepared with food is seen in this image.",
-      "A brown teddy bear sitting in front of an open book."
+      "A large crowd of motorcycle enthusiasts at a motorcycle event.",
+      "A large construction site for a bridge build.  ",
+      "A kitchen has white counters and a wooden floor.",
+      "On the plate is eggs,tomatoes sausage, and some bacon."
     ],
   };
+
+  // Check server status on component mount
+  useEffect(() => {
+    const checkServer = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/check`);
+        const data = await res.json();
+        
+        if (res.ok) {
+          setServerStatus({
+            status: 'ready',
+            message: 'Server is ready'
+          });
+        } else {
+          setServerStatus({
+            status: 'error',
+            message: `Server issues: ${data.issues?.join(', ')}`,
+            details: data
+          });
+        }
+      } catch (error) {
+        setServerStatus({
+          status: 'error',
+          message: 'Cannot connect to server. Is it running?'
+        });
+      }
+    };
+    
+    checkServer();
+  }, [API_BASE]);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -44,22 +77,47 @@ const TextToImage = () => {
 
     setIsGenerating(true);
     try {
-      // Simulate API call to DF-GAN backend
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Mock generated images
-      const mockImages = Array.from({ length: settings.batchSize }, (_, i) => ({
+      const res = await fetch(`${API_BASE}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          dataset: settings.dataset, // 'bird' -> CUB, 'coco' -> COCO
+          batchSize: settings.batchSize,
+          steps: settings.steps,
+          guidance: settings.guidance,
+          seed: settings.seed
+        })
+      });
+
+      if (!res.ok) {
+        // Prefer JSON error if provided by backend
+        let msg = 'Generation failed';
+        try {
+          const j = await res.json();
+          msg = j?.error || msg;
+        } catch {
+          const text = await res.text();
+          msg = text || msg;
+        }
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
+      const images = (data.images || []).map((b64, i) => ({
         id: Date.now() + i,
-        url: `https://picsum.photos/512/512?random=${Date.now() + i}`,
-        prompt: prompt,
+        url: `data:image/png;base64,${b64}`,
+        prompt,
         settings: { ...settings },
         createdAt: new Date()
       }));
 
-      setGeneratedImages(prev => [...mockImages, ...prev]);
-      toast.success(`Generated ${settings.batchSize} image(s) successfully!`);
+      if (!images.length) throw new Error('No images returned from DF-GAN');
+
+      setGeneratedImages(prev => [...images, ...prev]);
+      toast.success(`Generated ${images.length} image(s) successfully!`);
     } catch (error) {
-      toast.error('Failed to generate images. Please try again.');
+      toast.error(error.message || 'Failed to generate images. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -81,6 +139,24 @@ const TextToImage = () => {
             Create stunning images from text descriptions using the DF-GAN model.
             Enter your prompt and customize the generation settings below.
           </p>
+          
+          {/* Server Status Indicator */}
+          <div className={`mt-4 inline-flex items-center px-4 py-2 rounded-full text-sm ${
+            serverStatus.status === 'ready' 
+              ? 'bg-green-100 text-green-800' 
+              : serverStatus.status === 'error'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-yellow-100 text-yellow-800'
+          }`}>
+            <div className={`w-2 h-2 rounded-full mr-2 ${
+              serverStatus.status === 'ready' 
+                ? 'bg-green-500' 
+                : serverStatus.status === 'error'
+                  ? 'bg-red-500'
+                  : 'bg-yellow-500'
+            }`}></div>
+            {serverStatus.message}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

@@ -119,3 +119,6 @@ Thumbs.db
 temp/
 tmp/
 *.tmp
+models/
+venv/
+__pycache__/
