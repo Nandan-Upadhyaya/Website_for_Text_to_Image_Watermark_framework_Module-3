@@ -7,6 +7,10 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
 # Fix for compatibility with newer Werkzeug versions
 import werkzeug
 if not hasattr(werkzeug.urls, 'url_quote'):
@@ -18,20 +22,15 @@ import torch
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-# Import the wrapper module
+# Import configuration and wrapper module
+from config import (
+    DF_GAN_PATH, DF_GAN_CODE_PATH, DF_GAN_SRC_PATH,
+    CUB_WEIGHTS, COCO_WEIGHTS, get_data_dir, validate_paths, get_config_info
+)
 from dfgan_wrapper import DFGANGenerator
 
 app = Flask(__name__)
 CORS(app)
-
-# Paths
-AI_SUITE_ROOT = Path(r'C:\Users\Tejas\Desktop\stl\github\AI-Image-Suite')
-DF_GAN_PATH = Path(os.getenv('DF_GAN_PATH', r'C:\Users\Tejas\Desktop\stl\github\DF-GAN'))
-DF_GAN_CODE_PATH = DF_GAN_PATH / 'code'
-
-# Use weights from AI-Image-Suite\models as requested
-CUB_WEIGHTS = Path(os.getenv('CUB_WEIGHTS', str(AI_SUITE_ROOT / 'models' / 'CUB.pth')))
-COCO_WEIGHTS = Path(os.getenv('COCO_WEIGHTS', str(AI_SUITE_ROOT / 'models' / 'COCO.pth')))
 
 def is_cub_prompt(prompt: str) -> bool:
   p = (prompt or '').lower()
@@ -39,21 +38,12 @@ def is_cub_prompt(prompt: str) -> bool:
   return any(k in p for k in keys)
 
 def ensure_paths_ok():
-    if not DF_GAN_PATH.exists():
-        raise FileNotFoundError(f'DF-GAN repo path not found at {DF_GAN_PATH}')
-    if not DF_GAN_CODE_PATH.exists():
-        raise FileNotFoundError(f'DF-GAN code directory not found at {DF_GAN_CODE_PATH}')
-    if not CUB_WEIGHTS.exists():
-        raise FileNotFoundError(f'CUB weights not found at {CUB_WEIGHTS}')
-    if not COCO_WEIGHTS.exists():
-        raise FileNotFoundError(f'COCO weights not found at {COCO_WEIGHTS}')
+    """Validate that all required paths exist using the config module."""
+    success, issues = validate_paths()
+    if not success:
+        raise FileNotFoundError(f"Path validation failed: {'; '.join(issues)}")
     
-    # Check for sample.py script in the correct location
-    sample_script = DF_GAN_CODE_PATH / 'src' / 'sample.py'
-    if not sample_script.exists():
-        raise FileNotFoundError(f'Sample script not found at {sample_script}')
-    
-    return sample_script
+    return DF_GAN_SRC_PATH / 'sample.py'
 
 # Modify the dfgan_generate function to use our wrapper
 def dfgan_generate(prompt: str, model_key: str, out_dir: Path, seed: Optional[int], steps: int, guidance: float) -> Path:
@@ -62,13 +52,13 @@ def dfgan_generate(prompt: str, model_key: str, out_dir: Path, seed: Optional[in
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     
-    # Set model-specific paths
+    # Set model-specific paths using config module
     if model_key == 'CUB':
         weights = CUB_WEIGHTS
-        data_dir = str(DF_GAN_PATH / 'data' / 'birds')  # Changed from 'bird' to 'birds'
+        data_dir = str(get_data_dir('birds'))
     else:
         weights = COCO_WEIGHTS
-        data_dir = str(DF_GAN_PATH / 'data' / 'coco')
+        data_dir = str(get_data_dir('coco'))
     
     print(f"Using model: {weights}")
     print(f"Using data directory: {data_dir}")
@@ -76,7 +66,6 @@ def dfgan_generate(prompt: str, model_key: str, out_dir: Path, seed: Optional[in
     
     try:
         # Create or get the generator for this model
-        import torch
         model_key_lower = model_key.lower()
         use_cuda = torch.cuda.is_available()
         seed_value = seed if seed is not None and seed >= 0 else 100
@@ -111,41 +100,11 @@ def encode_b64(path: Path) -> str:
 @app.route('/api/check', methods=['GET'])
 def check_setup():
     """Endpoint to check if the setup is correct"""
-    issues = []
-    paths = {}
-    
-    # Check DF-GAN path
-    if not DF_GAN_PATH.exists():
-        issues.append(f"DF-GAN repo not found at {DF_GAN_PATH}")
-    else:
-        paths['df_gan'] = str(DF_GAN_PATH)
-        
-        # Check for code directory
-        if not DF_GAN_CODE_PATH.exists():
-            issues.append(f"Code directory not found at {DF_GAN_CODE_PATH}")
-        else:
-            paths['df_gan_code'] = str(DF_GAN_CODE_PATH)
-            
-            # Check for sample.py script
-            sample_script = DF_GAN_CODE_PATH / 'src' / 'sample.py'
-            if not sample_script.exists():
-                issues.append(f"Sample script not found at {sample_script}")
-            else:
-                paths['sample_script'] = str(sample_script)
-    
-    # Check model weights
-    if not CUB_WEIGHTS.exists():
-        issues.append(f"CUB weights not found at {CUB_WEIGHTS}")
-    else:
-        paths['cub_weights'] = str(CUB_WEIGHTS)
-    
-    if not COCO_WEIGHTS.exists():
-        issues.append(f"COCO weights not found at {COCO_WEIGHTS}")
-    else:
-        paths['coco_weights'] = str(COCO_WEIGHTS)
+    success, issues = validate_paths()
+    paths = get_config_info()
     
     # Return status
-    if issues:
+    if not success:
         return jsonify({
             'status': 'error',
             'issues': issues,

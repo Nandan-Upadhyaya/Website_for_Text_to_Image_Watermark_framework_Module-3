@@ -7,12 +7,16 @@ import torch
 from pathlib import Path
 import nltk
 
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
+# Import configuration
+from config import DF_GAN_PATH, DF_GAN_CODE_PATH, DF_GAN_SRC_PATH
+
 # Ensure DF-GAN code is in the path
-DF_GAN_PATH = Path(os.getenv('DF_GAN_PATH', r'C:\Users\Tejas\Desktop\stl\github\DF-GAN'))
-DF_GAN_CODE_PATH = DF_GAN_PATH / 'code'
-SRC_PATH = DF_GAN_CODE_PATH / 'src'
 sys.path.insert(0, str(DF_GAN_CODE_PATH))
-sys.path.insert(0, str(SRC_PATH))
+sys.path.insert(0, str(DF_GAN_SRC_PATH))
 
 # Import directly from the DF-GAN repo code
 from lib.utils import mkdir_p, load_netG, truncated_noise
@@ -123,8 +127,9 @@ class DFGANGenerator:
                 str(Path(self.args.data_dir).parent / "bird" / "captions_DAMSM.pickle"),
                 str(Path(self.args.data_dir).parent / "birds" / "captions.pickle"),
                 str(Path(self.args.data_dir).parent / "bird" / "captions.pickle"),
-                # Direct hardcoded path that was mentioned in the error
-                r"C:\Users\Tejas\Desktop\stl\github\DF-GAN\data\birds\captions_DAMSM.pickle"
+                # Use config-based path instead of hardcoded path
+                str(DF_GAN_PATH / 'data' / 'birds' / 'captions_DAMSM.pickle'),
+                str(DF_GAN_PATH / 'data' / 'coco' / 'captions_DAMSM.pickle')
             ]
             
             pickle_path = None
@@ -136,7 +141,7 @@ class DFGANGenerator:
                     break
             
             if pickle_path is None:
-                raise FileNotFoundError(f"Cannot find pickle file in any of the expected locations")
+                raise FileNotFoundError(f"Cannot find pickle file in any of the expected locations: {pickle_paths}")
             
             # Load the pickle file
             import pickle

@@ -48,6 +48,101 @@ A comprehensive web application that integrates three powerful AI image processi
 - **Animations**: Framer Motion
 - **Build Tool**: Create React App
 
+## Server Setup and Path Configuration
+
+The AI-Image-Suite server uses a flexible path configuration system that works across different development environments and systems.
+
+### Quick Setup
+
+1. **Clone the repositories**
+   ```bash
+   # Clone the main project
+   git clone <ai-image-suite-repo>
+   cd AI-Image-Suite
+   
+   # Clone DF-GAN in the parent directory
+   cd ..
+   git clone <df-gan-repo>
+   ```
+
+2. **Install Python dependencies**
+   ```bash
+   cd AI-Image-Suite
+   pip install -r requirements.txt
+   ```
+
+3. **Configure paths (optional)**
+   ```bash
+   # Copy the example environment file
+   cp .env.example .env
+   
+   # Edit .env if your paths differ from defaults
+   ```
+
+### Path Configuration
+
+The server automatically detects paths based on the project structure. The default layout expected is:
+
+```
+your-projects-folder/
+├── AI-Image-Suite/          # This repository
+│   ├── server/
+│   │   ├── app.py
+│   │   ├── config.py
+│   │   └── dfgan_wrapper.py
+│   └── models/
+│       ├── CUB.pth
+│       └── COCO.pth
+└── DF-GAN/                  # DF-GAN repository
+    ├── code/
+    ├── data/
+    └── models/
+```
+
+### Environment Variables
+
+If your setup differs from the default structure, you can override paths using environment variables:
+
+```bash
+# .env file
+DF_GAN_PATH=/path/to/DF-GAN
+AI_SUITE_ROOT=/path/to/AI-Image-Suite
+CUB_WEIGHTS=/path/to/CUB.pth
+COCO_WEIGHTS=/path/to/COCO.pth
+PORT=5001
+```
+
+### Cross-Platform Compatibility
+
+The configuration system automatically handles:
+- **Windows paths**: `D:\Projects\FYP\DF-GAN`
+- **Linux/Mac paths**: `/home/user/projects/DF-GAN`
+- **Relative paths**: `../DF-GAN`
+- **Environment variables**: `$DF_GAN_PATH`
+
+### Validation
+
+Check if your setup is correct:
+
+```bash
+# Start the server
+python server/app.py
+
+# Check the setup endpoint
+curl http://localhost:5001/api/check
+```
+
+The `/api/check` endpoint will report any missing files or incorrect paths.
+
+### Version Control
+
+The following files are automatically ignored by git:
+- `.env` (local environment configuration)
+- `myenv/` (Python virtual environments)
+- Temporary output directories
+
+This ensures that system-specific paths are not committed to version control.
+
 ## Project Structure
 
 ```
