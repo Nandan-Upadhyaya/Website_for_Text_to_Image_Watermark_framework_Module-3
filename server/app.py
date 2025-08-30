@@ -25,8 +25,8 @@ app = Flask(__name__)
 CORS(app)
 
 # Paths
-AI_SUITE_ROOT = Path(r'c:\Users\nanda\OneDrive\Desktop\AI-Image-Suite')
-DF_GAN_PATH = Path(os.getenv('DF_GAN_PATH', r'c:\Users\nanda\OneDrive\Desktop\DF-GAN'))
+AI_SUITE_ROOT = Path(r'C:\Users\Tejas\Desktop\stl\github\AI-Image-Suite')
+DF_GAN_PATH = Path(os.getenv('DF_GAN_PATH', r'C:\Users\Tejas\Desktop\stl\github\DF-GAN'))
 DF_GAN_CODE_PATH = DF_GAN_PATH / 'code'
 
 # Use weights from AI-Image-Suite\models as requested
@@ -56,7 +56,7 @@ def ensure_paths_ok():
     return sample_script
 
 # Modify the dfgan_generate function to use our wrapper
-def dfgan_generate(prompt: str, model_key: str, out_dir: Path, seed: Optional[int]) -> Path:
+def dfgan_generate(prompt: str, model_key: str, out_dir: Path, seed: Optional[int], steps: int, guidance: float) -> Path:
     """
     Execute DF-GAN inference using our wrapper for sample.py
     """
@@ -80,21 +80,23 @@ def dfgan_generate(prompt: str, model_key: str, out_dir: Path, seed: Optional[in
         model_key_lower = model_key.lower()
         use_cuda = torch.cuda.is_available()
         seed_value = seed if seed is not None and seed >= 0 else 100
-        
+
         # Create generator for this specific model
         generator = DFGANGenerator(
             model_path=str(weights),
             data_dir=data_dir,
             use_cuda=use_cuda,
-            seed=seed_value
+            seed=seed_value,
+            steps=steps,
+            guidance=guidance
         )
-        
+
         # Generate the image
         img_path = generator.generate_image(prompt, out_dir)
         print(f"Image generated at: {img_path}")
-        
+
         return img_path
-        
+
     except Exception as e:
         error_msg = f"Error generating image: {str(e)}"
         print(error_msg)
@@ -161,7 +163,9 @@ def generate():
     prompt = (payload.get('prompt') or '').strip()
     dataset = (payload.get('dataset') or '').strip()
     batch_size = int(payload.get('batchSize') or 1)
-    seed = int(payload.get('seed') or -1)
+    seeds = payload.get('seeds')
+    steps = int(payload.get('steps') or 50)
+    guidance = float(payload.get('guidance') or 7.5)
 
     if not prompt:
         return jsonify({'error': 'Prompt is required'}), 400
@@ -185,8 +189,11 @@ def generate():
     tmp_root = Path(tempfile.gettempdir()) / f'dfgan_{uuid.uuid4().hex}'
     images_b64: List[str] = []
     try:
-        for _ in range(batch_size):
-            img = dfgan_generate(prompt, model_key, tmp_root, seed if seed >= 0 else None)
+        for i in range(batch_size):
+            seed = None
+            if seeds and isinstance(seeds, list) and i < len(seeds):
+                seed = seeds[i]
+            img = dfgan_generate(prompt, model_key, tmp_root, seed if seed is not None and int(seed) >= 0 else None, steps, guidance)
             images_b64.append(encode_b64(img))
     except Exception as e:
         import traceback

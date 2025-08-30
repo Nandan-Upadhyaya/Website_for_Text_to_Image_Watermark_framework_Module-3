@@ -8,7 +8,7 @@ from pathlib import Path
 import nltk
 
 # Ensure DF-GAN code is in the path
-DF_GAN_PATH = Path(os.getenv('DF_GAN_PATH', r'c:\Users\nanda\OneDrive\Desktop\DF-GAN'))
+DF_GAN_PATH = Path(os.getenv('DF_GAN_PATH', r'C:\Users\Tejas\Desktop\stl\github\DF-GAN'))
 DF_GAN_CODE_PATH = DF_GAN_PATH / 'code'
 SRC_PATH = DF_GAN_CODE_PATH / 'src'
 sys.path.insert(0, str(DF_GAN_CODE_PATH))
@@ -20,12 +20,14 @@ from lib.utils import mkdir_p, load_netG, truncated_noise
 class DFGANGenerator:
     """Wrapper class for DF-GAN text-to-image generation."""
     
-    def __init__(self, model_path, data_dir, batch_size=1, use_cuda=True, seed=100):
+    def __init__(self, model_path, data_dir, batch_size=1, use_cuda=True, seed=100, steps=50, guidance=7.5):
         self.model_path = model_path
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.use_cuda = use_cuda and torch.cuda.is_available()
         self.seed = seed
+        self.steps = steps
+        self.guidance = guidance
         self.wordtoix = None
         self.text_encoder = None
         self.netG = None
@@ -122,7 +124,7 @@ class DFGANGenerator:
                 str(Path(self.args.data_dir).parent / "birds" / "captions.pickle"),
                 str(Path(self.args.data_dir).parent / "bird" / "captions.pickle"),
                 # Direct hardcoded path that was mentioned in the error
-                r"C:\Users\nanda\OneDrive\Desktop\DF-GAN\data\birds\captions_DAMSM.pickle"
+                r"C:\Users\Tejas\Desktop\stl\github\DF-GAN\data\birds\captions_DAMSM.pickle"
             ]
             
             pickle_path = None

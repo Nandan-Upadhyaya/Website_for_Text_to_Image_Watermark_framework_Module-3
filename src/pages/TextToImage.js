@@ -77,6 +77,8 @@ const TextToImage = () => {
 
     setIsGenerating(true);
     try {
+      // Generate a unique seed for each image in the batch
+      const seeds = Array.from({ length: settings.batchSize }, () => Math.floor(Math.random() * 1000000));
       const res = await fetch(`${API_BASE}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -86,7 +88,7 @@ const TextToImage = () => {
           batchSize: settings.batchSize,
           steps: settings.steps,
           guidance: settings.guidance,
-          seed: settings.seed
+          seeds: seeds
         })
       });
 
@@ -108,7 +110,7 @@ const TextToImage = () => {
         id: Date.now() + i,
         url: `data:image/png;base64,${b64}`,
         prompt,
-        settings: { ...settings },
+        settings: { ...settings, seed: seeds[i] },
         createdAt: new Date()
       }));
 
@@ -248,15 +250,15 @@ const TextToImage = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Batch Size: {settings.batchSize}
+                    Number of Images
                   </label>
                   <input
-                    type="range"
+                    type="number"
                     min="1"
-                    max="4"
+                    max="20"
                     value={settings.batchSize}
-                    onChange={(e) => setSettings({...settings, batchSize: parseInt(e.target.value)})}
-                    className="w-full"
+                    onChange={(e) => setSettings({...settings, batchSize: Math.max(1, Math.min(20, parseInt(e.target.value) || 1))})}
+                    className="input"
                     disabled={isGenerating}
                   />
                 </div>
@@ -294,17 +296,7 @@ const TextToImage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Seed (-1 for random)
-                  </label>
-                  <input
-                    type="number"
-                    value={settings.seed}
-                    onChange={(e) => setSettings({...settings, seed: parseInt(e.target.value)})}
-                    className="input"
-                    disabled={isGenerating}
-                    placeholder="-1"
-                  />
+                  {/* Seed input removed: seeds are now auto-generated per image */}
                 </div>
               </div>
             </div>
@@ -314,7 +306,15 @@ const TextToImage = () => {
         {/* Generated Images */}
         {generatedImages.length > 0 && (
           <div className="mt-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Generated Images</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">Generated Images</h2>
+              <button
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition"
+                onClick={() => setGeneratedImages([])}
+              >
+                Clear Images
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {generatedImages.map((image) => (
                 <div key={image.id} className="card p-4 image-fade-in">
