@@ -41,6 +41,60 @@ DF_GAN_SRC_PATH = DF_GAN_CODE_PATH / 'src'
 CUB_WEIGHTS = get_path_from_env('CUB_WEIGHTS', AI_SUITE_ROOT / 'models' / 'CUB.pth', "CUB model weights")
 COCO_WEIGHTS = get_path_from_env('COCO_WEIGHTS', AI_SUITE_ROOT / 'models' / 'COCO.pth', "COCO model weights")
 
+# Router defaults and evaluators
+ROUTER_DEFAULTS = {
+    "best_of": int(os.getenv("DFGAN_BEST_OF", 6)),          # number of DF-GAN samples per prompt
+    "clip_threshold": float(os.getenv("DFGAN_CLIP_THRESHOLD", 0.27)),  # rough CLIP cosine threshold
+    "use_clip": os.getenv("DFGAN_USE_CLIP", "true").lower() in ("1", "true", "yes"),
+    "min_subject_size_hint": 0.10,                           # heuristic for expected subject fraction (for later detectors)
+}
+
+# Subject terms (animals + humans) used for background prompt rewriting
+SUBJECT_TERMS = [
+    # humans
+    "man","woman","boy","girl","person","people","human",
+    # common animals
+    "dog","cat","horse","cow","sheep","goat","bird","eagle","parrot","pigeon","duck","chicken",
+    "lion","tiger","bear","elephant","zebra","giraffe","monkey","ape","panda","kangaroo","deer","fox","wolf",
+    "rabbit","hamster","squirrel","mouse","rat","pig","boar",
+    # pets/variants
+    "puppy","kitten","hound","husky","bulldog","poodle","retriever","lab","labrador","siamese","persian",
+]
+
+NEGATIVE_SUBJECT_HINT = "no people, no humans, no animals"
+
+# NEW: Subject provider configuration (pluggable)
+SUBJECT_PROVIDER = {
+    # modes: 'assets' (RGBA cutouts), 'http' (endpoint), 'cmd' (external script), 'biggan' (generate), 'none'
+    "mode": os.getenv("SUBJECT_PROVIDER_MODE", "assets").lower(),
+    "assets_dir": os.getenv("SUBJECT_ASSETS_DIR", str(AI_SUITE_ROOT / "subject_assets")),
+    "http_endpoint": os.getenv("SUBJECT_PROVIDER_HTTP", ""),
+    "cmd_template": os.getenv("SUBJECT_PROVIDER_CMD", ""),
+    "timeout_sec": int(os.getenv("SUBJECT_PROVIDER_TIMEOUT", 120)),
+    # BigGAN options
+    "biggan_model": os.getenv("BIGGAN_MODEL", "biggan-deep-256"),
+    "biggan_truncation": float(os.getenv("BIGGAN_TRUNCATION", 0.5)),
+    "biggan_samples": int(os.getenv("BIGGAN_SAMPLES", 8)),  # generate N and CLIP re-rank
+}
+
+# NEW: Simple compositing defaults
+COMPOSITION_DEFAULTS = {
+    "subject_height_frac": float(os.getenv("SUBJECT_HEIGHT_FRAC", 0.35)),
+    "bottom_margin_frac": float(os.getenv("SUBJECT_BOTTOM_MARGIN_FRAC", 0.02)),
+    "place": os.getenv("SUBJECT_PLACE", "center-bottom"),
+    "shadow": os.getenv("SUBJECT_SHADOW", "true").lower() in ("1", "true", "yes"),
+    "shadow_blur": int(os.getenv("SUBJECT_SHADOW_BLUR", 15)),
+    "shadow_offset_y": int(os.getenv("SUBJECT_SHADOW_OFFSET_Y", 10)),
+    "shadow_opacity": float(os.getenv("SUBJECT_SHADOW_OPACITY", 0.35)),
+    "color_match": os.getenv("SUBJECT_COLOR_MATCH", "true").lower() in ("1", "true", "yes"),
+    "use_poisson": os.getenv("USE_POISSON_BLEND", "true").lower() in ("1", "true", "yes"),
+    "inpaint_under_subject": os.getenv("INPAINT_UNDER_SUBJECT", "true").lower() in ("1", "true", "yes"),
+}
+
+# NEW: Simple BigGAN-only bypass for subject-only prompts
+SIMPLE_BIGGAN_ONLY = os.getenv("SIMPLE_BIGGAN_ONLY", "true").lower() in ("1", "true", "yes")
+SIMPLE_BIGGAN_ONLY_SUBJECTS = [s.strip().lower() for s in os.getenv("SIMPLE_BIGGAN_ONLY_SUBJECTS", "dog,cat").split(",") if s.strip()]
+
 # Data directories
 def get_data_dir(dataset: str) -> Path:
     """Get data directory for a specific dataset."""
@@ -100,4 +154,15 @@ def get_config_info():
         'COCO_WEIGHTS': str(COCO_WEIGHTS),
         'birds_data': str(get_data_dir('birds')),
         'coco_data': str(get_data_dir('coco')),
+        # router info
+        'router_best_of': ROUTER_DEFAULTS["best_of"],
+        'router_clip_threshold': ROUTER_DEFAULTS["clip_threshold"],
+        'router_use_clip': ROUTER_DEFAULTS["use_clip"],
+        # subject/composition info
+        'subject_provider_mode': SUBJECT_PROVIDER["mode"],
+        'subject_assets_dir': SUBJECT_PROVIDER["assets_dir"],
+        'composition_place': COMPOSITION_DEFAULTS["place"],
+        # NEW: biggan-only settings
+        'simple_biggan_only': SIMPLE_BIGGAN_ONLY,
+        'simple_biggan_only_subjects': SIMPLE_BIGGAN_ONLY_SUBJECTS,
     }
