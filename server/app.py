@@ -1,16 +1,16 @@
 import base64
+import io
 import os
 import shutil
-import subprocess
 import tempfile
 import uuid
 from pathlib import Path
 from typing import List, Optional
-from stylegan_wrapper import StyleGANGenerator
-from blend_utils import blend_images
+import sys
+import time
 import numpy as np
 import cv2
-import os
+from PIL import Image as PILImage
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -27,6 +27,22 @@ import torch
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+# Add Module-2 to Python path
+MODULE2_PATH = Path(__file__).parent.parent.parent / "Module-2"
+if str(MODULE2_PATH) not in sys.path:
+    sys.path.insert(0, str(MODULE2_PATH))
+
+print(f"🔍 [SERVER] Added Module-2 path: {MODULE2_PATH}")
+
+# Try to import the evaluator
+try:
+    from image_prompt_evaluator import ImagePromptEvaluator
+    EVALUATOR_AVAILABLE = True
+    print("✅ [SERVER] ImagePromptEvaluator imported successfully")
+except ImportError as e:
+    print(f"❌ [SERVER] Failed to import ImagePromptEvaluator: {e}")
+    EVALUATOR_AVAILABLE = False
+
 # Import configuration and wrapper module
 from config import (
     DF_GAN_PATH, DF_GAN_CODE_PATH, DF_GAN_SRC_PATH,
@@ -37,11 +53,19 @@ from dfgan_wrapper import DFGANGenerator
 # Import the vehicle generator
 from vehicle_gan import is_vehicle_prompt, generate_vehicle_image
 
+# Import other modules
+from stylegan_wrapper import StyleGANGenerator
+from blend_utils import blend_images
+
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["http://localhost:3000"])  # Explicit CORS for React app
 
+# Global variables
+LAST_GEN = {"ts": 0, "prompt": "", "images": []}
 stylegan_gen = StyleGANGenerator()
+_evaluator = None
 
+# Weak entities for blending
 weak_entities = {
     "man": "human",
     "woman": "human",
@@ -57,23 +81,27 @@ weak_entities = {
     "giraffe": "wild",
 }
 
+def get_evaluator():
+    global _evaluator
+    if EVALUATOR_AVAILABLE and _evaluator is None:
+        try:
+            _evaluator = ImagePromptEvaluator()
+            print("✅ [SERVER] ImagePromptEvaluator initialized")
+        except Exception as e:
+            print(f"❌ [SERVER] Failed to initialize evaluator: {e}")
+            return None
+    return _evaluator
+
 def detect_entity(prompt: str):
     for k, v in weak_entities.items():
         if k in prompt.lower():
             return v
     return None
 
-def save_and_return(img, outdir="outputs", filename="result.png"):
-    os.makedirs(outdir, exist_ok=True)
-    out_path = os.path.join(outdir, filename)
-    cv2.imwrite(out_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-    return {"image_path": out_path}
-
-
 def is_cub_prompt(prompt: str) -> bool:
-  p = (prompt or '').lower()
-  keys = ['bird', 'sparrow', 'eagle', 'jay', 'owl', 'finch', 'feather', 'beak', 'wing', 'robin', 'parrot']
-  return any(k in p for k in keys)
+    p = (prompt or '').lower()
+    keys = ['bird', 'sparrow', 'eagle', 'jay', 'owl', 'finch', 'feather', 'beak', 'wing', 'robin', 'parrot']
+    return any(k in p for k in keys)
 
 def ensure_paths_ok():
     """Validate that all required paths exist using the config module."""
@@ -83,11 +111,8 @@ def ensure_paths_ok():
     
     return DF_GAN_SRC_PATH / 'sample.py'
 
-# Modify the dfgan_generate function to use our wrapper
 def dfgan_generate(prompt: str, model_key: str, out_dir: Path, seed: Optional[int], steps: int, guidance: float) -> Path:
-    """
-    Execute DF-GAN inference using our wrapper for sample.py
-    """
+    """Execute DF-GAN inference using our wrapper for sample.py"""
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # Set model-specific paths using config module
@@ -104,7 +129,6 @@ def dfgan_generate(prompt: str, model_key: str, out_dir: Path, seed: Optional[in
     
     try:
         # Create or get the generator for this model
-        model_key_lower = model_key.lower()
         use_cuda = torch.cuda.is_available()
         seed_value = seed if seed is not None and seed >= 0 else 100
 
@@ -198,52 +222,46 @@ def generate():
 
     try:
         for i in range(batch_size):
-          seed = None
-          if seeds and isinstance(seeds, list) and i < len(seeds):
-           seed = seeds[i]
+            seed = None
+            if seeds and isinstance(seeds, list) and i < len(seeds):
+                seed = seeds[i]
 
-          # Vehicle specialized handling
-          if is_vehicle_prompt(prompt):
-              print(f"[Vehicle] Using specialized vehicle generator for: {prompt}")
-              # Fix: Unpack the tuple return value correctly
-              output_filename = uuid.uuid4().hex
-              img_path, vehicle_type = generate_vehicle_image(prompt, tmp_root, output_filename)
-              
-              if img_path and os.path.exists(str(img_path)):
-                  # The image is already saved to disk - just encode it
-                  images_b64.append(encode_b64(img_path))
-                  print(f"Vehicle image generated: {img_path} (type: {vehicle_type})")
-              else:
-                  # Fallback to normal DF-GAN if vehicle generation failed
-                  print("Vehicle generation failed, falling back to DF-GAN")
-                  img_path = dfgan_generate(
+            # Vehicle specialized handling
+            if is_vehicle_prompt(prompt):
+                print(f"[Vehicle] Using specialized vehicle generator for: {prompt}")
+                output_filename = uuid.uuid4().hex
+                img_path, vehicle_type = generate_vehicle_image(prompt, tmp_root, output_filename)
+                
+                if img_path and os.path.exists(str(img_path)):
+                    images_b64.append(encode_b64(img_path))
+                    print(f"Vehicle image generated: {img_path} (type: {vehicle_type})")
+                else:
+                    print("Vehicle generation failed, falling back to DF-GAN")
+                    img_path = dfgan_generate(
+                        prompt, model_key, tmp_root,
+                        seed if seed is not None and int(seed) >= 0 else None,
+                        steps, guidance
+                    )
+                    images_b64.append(encode_b64(img_path))
+            else:
+                img_path = dfgan_generate(
                     prompt, model_key, tmp_root,
                     seed if seed is not None and int(seed) >= 0 else None,
                     steps, guidance
-                  )
-                  images_b64.append(encode_b64(img_path))
-          else:
-              img_path = dfgan_generate(
-                prompt, model_key, tmp_root,
-                seed if seed is not None and int(seed) >= 0 else None,
-                steps, guidance
-              )
+                )
 
-              # --- NEW PART STARTS HERE ---
-              # Load DF-GAN output as numpy array
-              dfgan_img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
+                # Load DF-GAN output as numpy array
+                dfgan_img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
 
-              # Check if prompt needs StyleGAN entity
-              entity_type = detect_entity(prompt)
-              if entity_type:
-               entity_img = stylegan_gen.generate(entity_type, seed=np.random.randint(10000))
-               blended_img = blend_images(dfgan_img, entity_img, position=(64, 64))
+                # Check if prompt needs StyleGAN entity
+                entity_type = detect_entity(prompt)
+                if entity_type:
+                    entity_img = stylegan_gen.generate(entity_type, seed=np.random.randint(10000))
+                    blended_img = blend_images(dfgan_img, entity_img, position=(64, 64))
+                    # Overwrite DF-GAN file with blended image
+                    cv2.imwrite(str(img_path), cv2.cvtColor(blended_img, cv2.COLOR_RGB2BGR))
 
-            # Overwrite DF-GAN file with blended image
-               cv2.imwrite(str(img_path), cv2.cvtColor(blended_img, cv2.COLOR_RGB2BGR))
-              # --- NEW PART ENDS HERE ---
-
-              images_b64.append(encode_b64(img_path))
+                images_b64.append(encode_b64(img_path))
 
     except Exception as e:
         import traceback
@@ -251,10 +269,149 @@ def generate():
         shutil.rmtree(tmp_root, ignore_errors=True)
         return jsonify({'error': str(e)}), 500
 
+    # Publish event, cleanup, response
+    try:
+        LAST_GEN["ts"] = int(time.time() * 1000)
+        LAST_GEN["prompt"] = prompt
+        LAST_GEN["images"] = images_b64[:]
+    except Exception:
+        pass
+
     shutil.rmtree(tmp_root, ignore_errors=True)
     return jsonify({'images': images_b64, 'model': model_key})
+
+@app.route('/favicon.ico')
+def favicon():
+    """Return empty response for favicon to avoid 404s"""
+    return '', 204
+
+@app.route('/api/gen-events', methods=['GET'])
+def gen_events():
+    """Returns the last generation event"""
+    return jsonify({
+        "ts": LAST_GEN.get("ts", 0),
+        "prompt": LAST_GEN.get("prompt", ""),
+        "images": LAST_GEN.get("images", []),
+    })
+
+@app.route('/api/test', methods=['GET', 'POST'])
+def test_endpoint():
+    """Simple test endpoint to verify API connectivity"""
+    print("🔍 [TEST] /api/test endpoint called")
+    if request.method == 'POST':
+        data = request.get_json()
+        print(f"🔍 [TEST] POST data received: {data}")
+        return jsonify({'status': 'success', 'method': 'POST', 'data': data})
+    else:
+        print("🔍 [TEST] GET request received")
+        return jsonify({'status': 'success', 'method': 'GET', 'message': 'API is working'})
+
+@app.route('/api/evaluate-image', methods=['POST', 'OPTIONS'])
+def evaluate_single_image():
+    """Evaluate uploaded image using Module-2 evaluator"""
+    print("\n🔍 [EVAL] /api/evaluate-image called")
+    print(f"🔍 [EVAL] Request method: {request.method}")
+    print(f"🔍 [EVAL] Request headers: {dict(request.headers)}")
+    
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        print("🔍 [EVAL] Handling CORS preflight")
+        response = jsonify({'message': 'CORS preflight'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        return response
+    
+    try:
+        print("🔍 [EVAL] Processing POST request")
+        
+        # Check content type
+        if not request.is_json:
+            print(f"❌ [EVAL] Request is not JSON, content-type: {request.content_type}")
+            return jsonify({'error': 'Request must be JSON'}), 400
+        
+        data = request.get_json()
+        if not data:
+            print("❌ [EVAL] No JSON data received")
+            return jsonify({'error': 'No data provided'}), 400
+            
+        print(f"🔍 [EVAL] JSON data keys: {list(data.keys())}")
+        
+        image_b64 = data.get('image', '')
+        prompt = data.get('prompt', '').strip()
+        threshold = float(data.get('threshold', 0.22))
+        
+        print(f"🔍 [EVAL] Prompt: '{prompt[:50]}...'")
+        print(f"🔍 [EVAL] Threshold: {threshold}")
+        print(f"🔍 [EVAL] Image data length: {len(image_b64)}")
+        
+        if not image_b64 or not prompt:
+            print("❌ [EVAL] Missing image or prompt")
+            return jsonify({'error': 'Image and prompt required'}), 400
+
+        # Get evaluator
+        evaluator = get_evaluator()
+        if not evaluator:
+            print("❌ [EVAL] Evaluator not available")
+            return jsonify({'error': 'Evaluator not available - check server logs'}), 500
+
+        # Decode base64 image
+        try:
+            if ',' in image_b64:
+                image_b64 = image_b64.split(',', 1)[1]
+            
+            image_bytes = base64.b64decode(image_b64)
+            img = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
+            print(f"✅ [EVAL] Image decoded: {img.size}")
+        except Exception as e:
+            print(f"❌ [EVAL] Image decode error: {e}")
+            return jsonify({'error': f'Invalid image: {e}'}), 400
+
+        # Save to temp file
+        tmp_dir = Path(tempfile.gettempdir()) / f'eval_{uuid.uuid4().hex}'
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        img_path = tmp_dir / 'image.png'
+        img.save(str(img_path))
+        print(f"✅ [EVAL] Image saved to: {img_path}")
+
+        # Run Module-2 evaluation
+        print("🔍 [EVAL] Running Module-2 evaluation...")
+        try:
+            result = evaluator.evaluate_image(str(img_path), prompt, threshold)
+            print(f"✅ [EVAL] Evaluation complete!")
+            print(f"🎯 [EVAL] Result: {result.get('percentage_match', 'N/A')} ({result.get('quality', 'N/A')})")
+            
+            if 'keyword_analysis' in result:
+                print(f"🎯 [EVAL] Keywords: {len(result['keyword_analysis'])} analyzed")
+        except Exception as e:
+            print(f"❌ [EVAL] Evaluation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            result = {'error': str(e)}
+
+        # Cleanup
+        try:
+            img_path.unlink(missing_ok=True)
+            tmp_dir.rmdir()
+        except:
+            pass
+
+        if 'error' in result:
+            print(f"❌ [EVAL] Returning error: {result['error']}")
+            return jsonify(result), 500
+            
+        print("✅ [EVAL] Returning results to frontend")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"❌ [EVAL] Critical error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5001'))
     app.run(host='0.0.0.0', port=port, debug=True)
+
+
 

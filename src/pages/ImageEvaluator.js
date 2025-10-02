@@ -33,55 +33,124 @@ const ImageEvaluator = () => {
   });
 
   const handleEvaluate = async () => {
+    console.log("🔍 [FRONTEND] Starting evaluation...");
+    
     if (!image || !prompt.trim()) {
       toast.error('Please upload an image and enter a prompt');
       return;
     }
 
     setIsEvaluating(true);
+    
     try {
-      // Simulate API call to evaluation backend
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Mock evaluation results
-      const mockResults = {
-        prompt: prompt,
-        overallScore: Math.random() * 0.4 + 0.6, // 60-100%
-        quality: '',
-        feedback: '',
-        keywordAnalysis: [
-          { keyword: 'bird', present: true, confidence: 0.89 },
-          { keyword: 'yellow', present: Math.random() > 0.5, confidence: Math.random() * 0.3 + 0.6 },
-          { keyword: 'branch', present: Math.random() > 0.3, confidence: Math.random() * 0.4 + 0.5 },
-          { keyword: 'small', present: Math.random() > 0.4, confidence: Math.random() * 0.3 + 0.4 }
-        ],
-        contradictions: [],
-        suggestions: []
-      };
-
-      // Determine quality based on score
-      if (mockResults.overallScore >= 0.8) {
-        mockResults.quality = 'Excellent';
-        mockResults.feedback = 'The image matches the prompt very well with high semantic similarity.';
-      } else if (mockResults.overallScore >= 0.6) {
-        mockResults.quality = 'Good';
-        mockResults.feedback = 'The image shows good alignment with the prompt description.';
-      } else if (mockResults.overallScore >= 0.4) {
-        mockResults.quality = 'Fair';
-        mockResults.feedback = 'The image has some elements matching the prompt but could be improved.';
-      } else {
-        mockResults.quality = 'Poor';
-        mockResults.feedback = 'The image does not match the prompt well and needs significant improvement.';
+      // Test API connectivity first
+      console.log("🔍 [FRONTEND] Testing API connectivity...");
+      try {
+        const testResponse = await fetch('/api/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ test: 'connectivity' })
+        });
+        
+        if (!testResponse.ok) {
+          throw new Error(`API test failed: ${testResponse.status}`);
+        }
+        
+        const testData = await testResponse.json();
+        console.log("✅ [FRONTEND] API connectivity test passed:", testData);
+      } catch (testError) {
+        console.error("❌ [FRONTEND] API connectivity test failed:", testError);
+        throw new Error(`Cannot reach backend API: ${testError.message}`);
       }
 
-      setEvaluation({
-        ...mockResults,
-        percentageMatch: Math.round(mockResults.overallScore * 100)
+      // Convert image to base64
+      console.log("🔍 [FRONTEND] Converting image to base64...");
+      const base64Image = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(image.file);
       });
 
+      const requestBody = {
+        image: base64Image,
+        prompt: prompt.trim(),
+        threshold: threshold
+      };
+
+      console.log("🔍 [FRONTEND] Request body size:", JSON.stringify(requestBody).length);
+      console.log("🔍 [FRONTEND] Calling /api/evaluate-image...");
+      
+      // Call evaluation API with detailed error handling
+      const response = await fetch('/api/evaluate-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log(`🔍 [FRONTEND] Response status: ${response.status}`);
+      console.log(`🔍 [FRONTEND] Response headers:`, Object.fromEntries(response.headers));
+
+      // Check if response is actually JSON
+      const contentType = response.headers.get('content-type');
+      console.log(`🔍 [FRONTEND] Content-Type: ${contentType}`);
+      
+      if (!contentType || !contentType.includes('application/json')) {
+        // Response is not JSON - likely an error page
+        const textResponse = await response.text();
+        console.error("❌ [FRONTEND] Non-JSON response received:", textResponse.substring(0, 500));
+        throw new Error(`Server returned HTML instead of JSON. Check if backend is running on port 5001.`);
+      }
+
+      const results = await response.json();
+      console.log("✅ [FRONTEND] Got JSON response:", Object.keys(results));
+
+      if (!response.ok) {
+        throw new Error(results.error || `HTTP ${response.status}`);
+      }
+
+      if (results.error) {
+        throw new Error(results.error);
+      }
+
+      // Check for required fields
+      if (!results.percentage_match || !results.quality) {
+        console.error("❌ [FRONTEND] Invalid response structure:", results);
+        throw new Error('Invalid response from server - missing required fields');
+      }
+
+      console.log("✅ [FRONTEND] Valid evaluation results received");
+
+      // Transform Module-2 results for frontend display
+      const transformedResults = {
+        prompt: results.prompt,
+        overallScore: results.overall_score,
+        percentageMatch: parseFloat(results.percentage_match.replace('%', '')),
+        quality: results.quality,
+        feedback: results.feedback,
+        keywordAnalysis: (results.keyword_analysis || []).map(kw => ({
+          keyword: kw.keyword,
+          present: kw.status_type === 'present',
+          confidence: parseFloat(kw.confidence.replace('%', '')) / 100,
+          confidencePercent: kw.confidence,
+          status: kw.status,
+          statusType: kw.status_type,
+          rawScore: kw.raw_score || 0
+        })),
+        contradictionWarning: results.contradiction_warning,
+        missingFeatureAnalysis: results.missing_feature_analysis,
+        detailedMetrics: results.detailed_metrics || { raw_score: 0, average_score: 0 }
+      };
+
+      console.log("✅ [FRONTEND] Results transformed successfully");
+      setEvaluation(transformedResults);
       toast.success('Evaluation completed successfully!');
+      
     } catch (error) {
-      toast.error('Failed to evaluate image. Please try again.');
+      console.error("❌ [FRONTEND] Evaluation failed:", error);
+      toast.error(`Failed to evaluate: ${error.message}`);
     } finally {
       setIsEvaluating(false);
     }
@@ -217,7 +286,7 @@ const ImageEvaluator = () => {
             </div>
           </div>
 
-          {/* Results Panel */}
+          {/* Results Panel - Updated to show real Module-2 results */}
           <div className="space-y-6">
             {evaluation ? (
               <>
@@ -225,12 +294,12 @@ const ImageEvaluator = () => {
                 <div className="card p-6">
                   <h2 className="text-xl font-semibold mb-4 flex items-center space-x-2">
                     <ChartBarIcon className="w-5 h-5 text-primary-600" />
-                    <span>Evaluation Results</span>
+                    <span>Module-2 Evaluation Results</span>
                   </h2>
 
                   <div className="text-center mb-6">
                     <div className={`text-6xl font-bold mb-2 ${getScoreColor(evaluation.percentageMatch)}`}>
-                      {evaluation.percentageMatch}%
+                      {evaluation.percentageMatch.toFixed(2)}%
                     </div>
                     <div className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${getQualityColor(evaluation.quality)}`}>
                       {evaluation.quality}
@@ -241,6 +310,14 @@ const ImageEvaluator = () => {
                     {evaluation.feedback}
                   </p>
 
+                  {/* Contradiction Warning */}
+                  {evaluation.contradictionWarning && (
+                    <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                      <ExclamationTriangleIcon className="w-4 h-4 inline mr-2" />
+                      {evaluation.contradictionWarning}
+                    </div>
+                  )}
+
                   {/* Progress Bar */}
                   <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
                     <div 
@@ -249,51 +326,111 @@ const ImageEvaluator = () => {
                         evaluation.percentageMatch >= 60 ? 'bg-blue-500' :
                         evaluation.percentageMatch >= 40 ? 'bg-yellow-500' : 'bg-red-500'
                       }`}
-                      style={{ width: `${evaluation.percentageMatch}%` }}
+                      style={{ width: `${Math.min(100, evaluation.percentageMatch)}%` }}
                     />
                   </div>
+
+                  {/* Detailed Metrics */}
+                  {evaluation.detailedMetrics && (
+                    <div className="mt-4 text-xs text-gray-500 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Raw CLIP Score:</span>
+                        <span className="font-mono">{evaluation.detailedMetrics.raw_score?.toFixed(4)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Average Score:</span>
+                        <span className="font-mono">{evaluation.detailedMetrics.average_score?.toFixed(4)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Keyword Analysis */}
+                {/* Keyword Analysis - Real Module-2 Data */}
                 <div className="card p-6">
-                  <h3 className="text-lg font-semibold mb-4">Keyword Analysis</h3>
+                  <h3 className="text-lg font-semibold mb-4">Detailed Keyword Analysis</h3>
                   <div className="space-y-3">
                     {evaluation.keywordAnalysis.map((keyword, index) => (
                       <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                         <div className="flex items-center space-x-3">
-                          {keyword.present ? (
+                          {keyword.statusType === 'present' ? (
                             <CheckCircleIcon className="w-5 h-5 text-green-500" />
+                          ) : keyword.statusType === 'weak' ? (
+                            <ExclamationTriangleIcon className="w-5 h-5 text-yellow-500" />
                           ) : (
                             <ExclamationTriangleIcon className="w-5 h-5 text-red-500" />
                           )}
-                          <span className="font-medium">{keyword.keyword}</span>
+                          <div>
+                            <span className="font-medium">{keyword.keyword}</span>
+                            <span className="ml-2 text-xs text-gray-500">{keyword.status}</span>
+                          </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <div className="flex items-center">
-                            {[...Array(5)].map((_, i) => (
-                              <StarIcon 
-                                key={i}
-                                className={`w-4 h-4 ${
-                                  i < Math.round(keyword.confidence * 5) 
-                                    ? 'text-yellow-400 fill-current' 
-                                    : 'text-gray-300'
-                                }`}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-sm text-gray-600">
-                            {Math.round(keyword.confidence * 100)}%
+                          <span className="text-sm font-medium text-gray-700">
+                            {keyword.confidencePercent}
                           </span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
+
+                {/* Feature Analysis Summary */}
+                {evaluation.missingFeatureAnalysis && (
+                  <div className="card p-6">
+                    <h3 className="text-lg font-semibold mb-4">Feature Analysis</h3>
+                    
+                    {evaluation.missingFeatureAnalysis.present_features?.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-green-700 mb-2">
+                          ✅ Present Features ({evaluation.missingFeatureAnalysis.present_features.length})
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {evaluation.missingFeatureAnalysis.present_features.map((f, i) => (
+                            <span key={i} className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                              {f.keyword} ({f.confidence?.toFixed(1)}%)
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {evaluation.missingFeatureAnalysis.weak_features?.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-yellow-700 mb-2">
+                          ⚠️ Weak Features ({evaluation.missingFeatureAnalysis.weak_features.length})
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {evaluation.missingFeatureAnalysis.weak_features.map((f, i) => (
+                            <span key={i} className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
+                              {f.keyword} ({f.confidence?.toFixed(1)}%)
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {evaluation.missingFeatureAnalysis.missing_features?.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold text-red-700 mb-2">
+                          ❌ Missing Features ({evaluation.missingFeatureAnalysis.missing_features.length})
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {evaluation.missingFeatureAnalysis.missing_features.map((f, i) => (
+                            <span key={i} className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
+                              {f.keyword} ({f.confidence?.toFixed(1)}%)
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <div className="card p-6 text-center text-gray-500">
                 <ChartBarIcon className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                 <p>Upload an image and enter a prompt to see evaluation results</p>
+                <p className="text-xs mt-2">Using Module-2 CLIP-based evaluation</p>
               </div>
             )}
           </div>
