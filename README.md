@@ -1,16 +1,17 @@
 # AI Image Processing Suite
 
-A comprehensive web application that integrates three powerful AI image processing modules:
+A comprehensive Text Prompt to Watermarked Image generation web application that integrates three powerful modules:
 
 1. **DF-GAN Text-to-Image Generation (Module 1)** - Generate stunning images from text descriptions
 2. **Image Prompt Evaluator (Module 2)** - Evaluate how well AI-generated images match their text prompts
 3. **Watermark Protection UI (Module 3)** - Add professional watermarks to protect your images
+4. **Website Integration (Full Suite)** - A cohesive web app that orchestrates DF-GAN generation (Module 1), CLIP-based evaluation (Module 2), and watermarking (Module 3), adding batch workflows, auto-evaluation, galleries, recommendations, and streamlined downloads.
 
 ## Features
 
 ### 🎨 Text-to-Image Generation
 - Generate images from text descriptions using the DF-GAN model
-- Support for multiple datasets (Birds, COCO, Flowers)
+- Support for multiple datasets (CUB, COCO)
 - Customizable generation settings (batch size, steps, guidance scale, seed)
 - Example prompts for different datasets
 - Real-time generation progress tracking
@@ -31,10 +32,9 @@ A comprehensive web application that integrates three powerful AI image processi
 
 ### 📱 Modern UI/UX
 - Responsive design for all device sizes
-- Dark/light mode support
 - Drag-and-drop file uploads
 - Real-time progress indicators
-- Toast notifications for user feedback
+- Real time Toast notification integration for flow indication
 - Image gallery with filtering and search
 
 ## Technology Stack
@@ -45,7 +45,6 @@ A comprehensive web application that integrates three powerful AI image processi
 - **Routing**: React Router DOM
 - **File Handling**: React Dropzone
 - **Notifications**: React Hot Toast
-- **Animations**: Framer Motion
 - **Build Tool**: Create React App
 
 ## Server Setup and Path Configuration
@@ -57,258 +56,158 @@ The AI-Image-Suite server uses a flexible path configuration system that works a
 1. **Clone the repositories**
    ```bash
    # Clone the main project
-   git clone <ai-image-suite-repo>
+   git clone AI-Image-Suite
    cd AI-Image-Suite
    
-   # Clone DF-GAN in the parent directory
-   cd ..
-   git clone <df-gan-repo>
-   ```
 
 2. **Install Python dependencies**
    ```bash
-   cd AI-Image-Suite
    pip install -r requirements.txt
    ```
 
-3. **Configure paths (optional)**
+3. **Install dependencies**
    ```bash
-   # Copy the example environment file
-   cp .env.example .env
-   
-   # Edit .env if your paths differ from defaults
+   npm install
    ```
 
-### Path Configuration
-
-The server automatically detects paths based on the project structure. The default layout expected is:
-
-```
-your-projects-folder/
-├── AI-Image-Suite/          # This repository
-│   ├── server/
-│   │   ├── app.py
-│   │   ├── config.py
-│   │   └── dfgan_wrapper.py
-│   └── models/
-│       ├── CUB.pth
-│       └── COCO.pth
-└── DF-GAN/                  # DF-GAN repository
-    ├── code/
-    ├── data/
-    └── models/
-```
-
-### Environment Variables
-
-If your setup differs from the default structure, you can override paths using environment variables:
-
-```bash
-# .env file
-DF_GAN_PATH=/path/to/DF-GAN
-AI_SUITE_ROOT=/path/to/AI-Image-Suite
-CUB_WEIGHTS=/path/to/CUB.pth
-COCO_WEIGHTS=/path/to/COCO.pth
-PORT=5001
-```
-
-### Cross-Platform Compatibility
-
-The configuration system automatically handles:
-- **Windows paths**: `D:\Projects\FYP\DF-GAN`
-- **Linux/Mac paths**: `/home/user/projects/DF-GAN`
-- **Relative paths**: `../DF-GAN`
-- **Environment variables**: `$DF_GAN_PATH`
 
 ### Validation
 
 Check if your setup is correct:
 
-```bash
 # Start the server
 python server/app.py
 
 # Check the setup endpoint
 curl http://localhost:5001/api/check
-```
+
 
 The `/api/check` endpoint will report any missing files or incorrect paths.
 
-### Version Control
+# In one more terminal:
 
-The following files are automatically ignored by git:
-- `.env` (local environment configuration)
-- `myenv/` (Python virtual environments)
-- Temporary output directories
+3. cd AI-Image-Suite
 
-This ensures that system-specific paths are not committed to version control.
-
-## Project Structure
-
-```
-src/
-├── components/
-│   └── Navbar.js          # Navigation component
-├── pages/
-│   ├── Dashboard.js       # Homepage with overview
-│   ├── TextToImage.js     # DF-GAN image generation
-│   ├── ImageEvaluator.js  # CLIP-based evaluation
-│   ├── Watermark.js       # Watermarking interface
-│   └── Gallery.js         # Image management
-├── App.js                 # Main app component
-├── index.js              # Entry point
-└── index.css             # Global styles
-```
-
-## Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd AI-Image-Suite
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Start the development server**
+4. **Start the development server**
    ```bash
    npm start
    ```
 
-4. **Open your browser**
+5. **Open your browser**
    Navigate to `http://localhost:3000`
 
-## Backend Integration
 
-This frontend is designed to work with three backend modules:
+## Modules at a Glance (Standalone References)
+- Module 1: DF-GAN Text-to-Image Generation
+  - GitHub: https://github.com/The-GANners/DF-GAN
+  - Purpose: Generate images from text using GANs (CUB/COCO, etc.)
+- Module 2: CLIP-based Image Prompt Evaluator
+  - Github: https://github.com/The-GANners/Module-2
+  - Purpose: Score semantic match between an image and prompt + keyword/feature analysis
+- Module 3: Watermark UI (reference implementation)
+  - Github: https://github.com/The-GANners/Watermark-UI
+  - Purpose: Add batch watermarks with placement/opacity/scale controls
 
-### Module 1: DF-GAN Backend
-- **Endpoint**: `/api/generate`
-- **Method**: POST
-- **Payload**: 
-  ```json
-  {
-    "prompt": "string",
-    "dataset": "bird|coco|flower",
-    "batch_size": 1-4,
-    "steps": 20-200,
-    "guidance": 1.0-20.0,
-    "seed": -1 or positive integer
-  }
-  ```
+## How Each Module Works
 
-### Module 2: Image Evaluator Backend
-- **Endpoint**: `/api/evaluate`
-- **Method**: POST (multipart/form-data)
-- **Payload**:
-  ```
-  image: File
-  prompt: string
-  threshold: 0.1-0.4
-  ```
+### Module 1 — DF-GAN Text-to-Image (Standalone)
+- What it is:
+  - A text-to-image GAN that synthesizes images from natural language prompts. Training/evaluation entry points are under code/src (train.py, sample.py, test_FID.py) with YAML configs in code/cfg.
 
-### Module 3: Watermark Backend
-- **Endpoint**: `/api/watermark`
-- **Method**: POST (multipart/form-data)
-- **Payload**:
-  ```
-  images: File[]
-  watermark: File
-  settings: WatermarkSettings object
-  ```
+- Inputs:
+  - Prompt(s): tokenized via DAMSM vocabulary.
+  - Noise Vector: z_dim (default 100), batch size, truncation/trunc_rate, manual_seed, encoder_epoch; dataset-specific text/image encoders.
 
-## Configuration
+- Outputs:
+  - Generated PNGs (normalized from [-1,1] to [0,255]) saved per-sentence. Training also writes periodic grids and checkpoints to saved_models folder.
+  - Metrics/artifacts: FID computed with 2048-dim Inception features against npz stats.
+  - optional CLIP alignment grid and score saved under alignment_samples.
 
-Create a `.env` file in the root directory:
+- Key components:
+  - Text Encoder : bi-LSTM that returns word- and sentence-level embeddings (256).
 
-```env
-REACT_APP_API_BASE_URL=http://localhost:5000
-REACT_APP_DFGAN_ENDPOINT=/api/generate
-REACT_APP_EVALUATOR_ENDPOINT=/api/evaluate
-REACT_APP_WATERMARK_ENDPOINT=/api/watermark
-```
+  - Image encoder : (CNN_ENCODER): Inception v3 backbone projecting image features to 256-d, used by DAMSM and dataset prep.
 
-## Features in Detail
+  - Generator:
+    - noise z → fc to 8·nf·4×4 → stack of G_Block(up-sample) layers (get_G_in_out_chs) → to_rgb → Tanh.
+    - Text conditioning via DFBLK + Affine: concatenates [z, sent_emb] and modulates feature maps in each block.
 
-### Dashboard
-- Overview of all three modules
-- Usage statistics
-- Quick access to main features
-- Recent activity feed
+  - Discriminator:
+    - NetD extracts multi-scale features with D_Block downsamplers.
+    - NetC concatenates image features with sentence embedding (spatially replicated) to produce a conditional real/fake logit.
+    - Losses use hinge; includes mismatched text negatives.
+   - Regularization: Matching-Aware Gradient Penalty on image/text gradients.
+   - Stabilization: Exponential Moving Average of G, EMA weights are used for testing/FID.
 
-### Text-to-Image Generation
-- Multiple dataset support (CUB-200-2011 Birds, COCO, Oxford Flowers)
-- Real-time generation with progress indicators
-- Customizable parameters (steps, guidance, batch size, seed)
-- Example prompts for each dataset
-- Generated image gallery with metadata
+  - Evaluation:
+    - FID: InceptionV3 2048-d features vs dataset npz.
+    - CLIP alignment (optional diagnostic): generates a grid and cosine scores for prompts using ViT-B/32 CLIP pre-trained model.
 
-### Image Evaluation
-- Upload images via drag-and-drop
-- CLIP model-based semantic analysis
-- Keyword presence detection
-- Confidence scoring for each element
-- Quality ratings and feedback
-- Adjustable similarity thresholds
+- Standalone repo: https://github.com/The-GANners/DF-GAN
 
-### Watermarking
-- Bulk image processing
-- Multiple positioning options (corners, center)
-- Opacity and scale controls
-- Padding customization
-- File naming patterns (prefix/suffix)
-- Auto-resize functionality
-- Batch download with ZIP compression
+### Module 2 — CLIP-based Image Prompt Evaluator (Standalone Python)
+- What it is:
+  - A Python module that evaluates image–prompt alignment using CLIP ViT-B/32, with enhanced keyword analysis, contradiction checks, and score normalization.
 
-### Gallery
-- Centralized image management
-- Category filtering (Generated, Evaluated, Watermarked)
-- Search by prompt or tags
-- Sort by date or quality score
-- Image actions (view, share, download, favorite)
-- Metadata display
+- Inputs:
+  - image_path: path to a PNG/JPEG/WebP image.
+  - prompt: natural-language text.
+  
 
-## Responsive Design
+- Outputs (dict):
+  - overall_score, original_score, percentage_match, original_percentage, raw_percentage
+  - quality (Excellent/Good/Fair/Poor), feedback, prompt
+  - keyword_analysis: [{ keyword, present, confidence, raw_score, status, status_type }]
+  - meets_threshold: bool
+  - detailed_metrics: { raw_score, penalized_score, average_score, normalized_score, percentage, all_scores }
+  - contradiction_warning (if penalty applied)
+  - missing_feature_analysis: { present_features|weak_features|missing_features (with importance_weight, confidence, raw_score), counts }
+  - missing_feature_feedback, missing_feature_penalty, penalty_percentage
 
-The application is fully responsive and works seamlessly across:
-- Desktop (1024px+)
-- Tablet (768px - 1023px)
-- Mobile (320px - 767px)
+- How it works (from code):
+  - CLIP ViT-B/32 encodes image and multiple prompt variants (“a photo of …”, “an image showing …”, cleaned prompt); uses best similarity.
+  - Applies semantic contradiction penalties for conflicting concepts if contradiction score exceeds the main score by a margin.
+  - Extracts important keywords via NLTK (POS tagging, stopwords), boosts animals/living things using WordNet, and assigns importance weights.
+  - Probes each keyword with multiple templates to classify present/weak/missing.
+  - Computes a weighted missing-feature penalty; combines with contradiction penalty and recalculates normalized percentage.
+  - Normalizes raw CLIP scores to 0–100% with calibrated bands and maps to quality:
+    - Excellent > 0.28, Good > 0.22, Fair > 0.18, else Poor.
 
-## Performance Optimizations
+- Standalone repo: https://github.com/The-GANners/Module-2
+- Core CLIP model: https://github.com/openai/CLIP
 
-- Lazy loading for images
-- Optimized re-renders with React.memo
-- Efficient state management
-- Image compression and caching
-- Progressive loading indicators
+### Module 3 — Watermark UI (Standalone Desktop App)
+- What it is:
+  - A standalone Tkinter desktop application for batch watermarking images. The app provides a dark-themed UI, progress tracking, and safe overwrite behavior. 
 
-## Browser Support
+- Inputs (from the UI):
+  - Images: selected via folder picker or multiple file selection.
+  - Watermark image: chosen from disk.
+  - Options:
+    - Position: NW | NE | SW | SE
+    - Padding: ((padX, unit), (padY, unit)) where unit is "px" or "%"
+    - Opacity: 0–100% (applied as 0.0–1.0 alpha)
+    - Auto-resize watermark: on/off
+  - Output:
+    - Output directory and file renaming (prefix/postfix/none) via OutputSelector.
+    - Overwrite toggle is handled per run (confirmation if files exist).
 
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
+- Outputs:
+  - Watermarked images saved to the chosen output directory (same extension as inputs), with optional prefix/suffix renaming. No network/API involved.
 
-## Contributing
+- How it works (from code):
+  - App composition:
+    - FileSelector: collects image paths; supports folder or multi-file selection.
+    - OptionsPane: hosts WatermarkSelector, WatermarkOptions, and OutputSelector.
+    - Worker: orchestrates batch processing, threads, progress bar, time estimation.
+  - Processing loop:
+    - Gathers files into a queue, asks for overwrite if needed, then spawns a worker thread.
+    - For each image, builds output path.
+    - Tracks progress/time via RemainingTime + Pacer.
+  - Watermarking core:
+      - Scaling: scales watermark based on input aspect (landscape/portrait/square) using configurable scale factors and min/max bounds.
+      - Opacity: converts to RGBA and scales alpha channel per pixel if opacity < 1 (change_opacity).
+      - Position: computes (x,y) from pos and padding; padding supports px/% units (get_watermark_position).
+      - Caches resized watermark while processing a batch; respects overwrite flag.
+- Standalone repo: https://github.com/The-GANners/Watermark-UI 
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- [DF-GAN](https://github.com/tobran/DF-GAN) for text-to-image generation
-- [CLIP](https://github.com/openai/CLIP) for image-text similarity evaluation
-- [FreeMark](https://github.com/nikolajlauridsen/FreeMark) for watermarking inspiration
-- [Heroicons](https://heroicons.com/) for beautiful icons
-- [Tailwind CSS](https://tailwindcss.com/) for styling framework
