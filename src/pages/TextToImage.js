@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { PhotoIcon, SparklesIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
+import { PhotoIcon, SparklesIcon, AdjustmentsHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 const TextToImage = () => {
@@ -15,6 +16,9 @@ const TextToImage = () => {
     guidance: 7.5,
     seed: -1
   });
+  const [showEvaluationDialog, setShowEvaluationDialog] = useState(false);
+  const [pendingEvaluationData, setPendingEvaluationData] = useState(null);
+  const navigate = useNavigate();
 
   const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
 
@@ -32,7 +36,7 @@ const TextToImage = () => {
       "this bird is white with red and has a very short beak."
     ],
     coco: [
-      "A large crowd of motorcycle enthusiasts at a motorcycle event.",
+      "A boat in the middle of the ocean.",
       "A large construction site for a bridge build.  ",
       "A kitchen has white counters and a wooden floor.",
       "On the plate is eggs,tomatoes sausage, and some bacon."
@@ -118,11 +122,49 @@ const TextToImage = () => {
 
       setGeneratedImages(prev => [...images, ...prev]);
       toast.success(`Generated ${images.length} image(s) successfully!`);
+      
+      // NEW: Trigger auto-evaluation suggestion after 1.5 seconds
+      setTimeout(() => {
+        setPendingEvaluationData({
+          prompt: prompt.trim(),
+          images: images,
+          timestamp: Date.now()
+        });
+        setShowEvaluationDialog(true);
+      }, 1500);
+      
     } catch (error) {
       toast.error(error.message || 'Failed to generate images. Please try again.');
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  // NEW: Handle auto-evaluation acceptance
+  const handleAutoEvaluationAccept = () => {
+    if (pendingEvaluationData) {
+      // Store the evaluation data globally for the ImageEvaluator to pick up
+      sessionStorage.setItem('autoEvaluationData', JSON.stringify({
+        prompt: pendingEvaluationData.prompt,
+        images: pendingEvaluationData.images.map(img => ({
+          id: img.id,
+          url: img.url,
+          prompt: img.prompt
+        })),
+        timestamp: pendingEvaluationData.timestamp
+      }));
+      
+      // Navigate to evaluation page
+      navigate('/evaluate');
+    }
+    setShowEvaluationDialog(false);
+    setPendingEvaluationData(null);
+  };
+
+  // NEW: Handle auto-evaluation decline
+  const handleAutoEvaluationDecline = () => {
+    setShowEvaluationDialog(false);
+    setPendingEvaluationData(null);
   };
 
   const setExamplePrompt = (examplePrompt) => {
@@ -336,6 +378,60 @@ const TextToImage = () => {
           </div>
         )}
       </div>
+
+      {/* NEW: Auto-Evaluation Suggestion Dialog */}
+      {showEvaluationDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 animate-fade-in">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2">
+                <SparklesIcon className="w-6 h-6 text-primary-600" />
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Try CLIP-based Analysis
+                </h3>
+              </div>
+              <button
+                onClick={handleAutoEvaluationDecline}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-gray-600 mb-3">
+                Great! You've generated {pendingEvaluationData?.images?.length || 0} image(s). 
+                Would you like to automatically evaluate how well they match your prompt using our 
+                advanced CLIP-based analysis?
+              </p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>What you'll get:</strong>
+                  <br />• Semantic similarity scores
+                  <br />• Detailed keyword analysis  
+                  <br />• Feature presence detection
+                  <br />• Quality recommendations
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={handleAutoEvaluationDecline}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                No, Thanks
+              </button>
+              <button
+                onClick={handleAutoEvaluationAccept}
+                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+              >
+                Yes, Analyze!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
