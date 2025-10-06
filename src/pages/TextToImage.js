@@ -12,8 +12,6 @@ const TextToImage = () => {
     model: 'df-gan',
     dataset: 'bird',
     batchSize: 1,
-    steps: 100,
-    guidance: 7.5,
     seed: -1
   });
   const [showEvaluationDialog, setShowEvaluationDialog] = useState(false);
@@ -90,8 +88,6 @@ const TextToImage = () => {
           prompt: prompt.trim(),
           dataset: settings.dataset, // 'bird' -> CUB, 'coco' -> COCO
           batchSize: settings.batchSize,
-          steps: settings.steps,
-          guidance: settings.guidance,
           seeds: seeds
         })
       });
@@ -306,38 +302,6 @@ const TextToImage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Generation Steps: {settings.steps}
-                  </label>
-                  <input
-                    type="range"
-                    min="20"
-                    max="200"
-                    step="10"
-                    value={settings.steps}
-                    onChange={(e) => setSettings({...settings, steps: parseInt(e.target.value)})}
-                    className="w-full"
-                    disabled={isGenerating}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Guidance Scale: {settings.guidance}
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="20"
-                    step="0.5"
-                    value={settings.guidance}
-                    onChange={(e) => setSettings({...settings, guidance: parseFloat(e.target.value)})}
-                    className="w-full"
-                    disabled={isGenerating}
-                  />
-                </div>
-
-                <div>
                   {/* Seed input removed: seeds are now auto-generated per image */}
                 </div>
               </div>
@@ -437,3 +401,4 @@ const TextToImage = () => {
 };
 
 export default TextToImage;
+              

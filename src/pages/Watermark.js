@@ -27,6 +27,12 @@ const Watermark = () => {
     autoResize: true
   });
 
+  const [watermarkMode, setWatermarkMode] = useState('image'); // 'image' | 'text'
+  const [watermarkFile, setWatermarkFile] = useState(null);
+  const [watermarkText, setWatermarkText] = useState('Sample Watermark');
+  const [textSize, setTextSize] = useState(32);
+  const [textColor, setTextColor] = useState('#FFFFFF');
+
   const positions = [
     { value: 'top-left', label: 'Top Left' },
     { value: 'top-right', label: 'Top Right' },
@@ -77,7 +83,8 @@ const Watermark = () => {
       toast.error('Please select images to watermark');
       return;
     }
-    if (!watermarkImage) {
+    // Require watermark only in image mode
+    if (watermarkMode === 'image' && !watermarkImage && !watermarkFile) {
       toast.error('Please select a watermark image');
       return;
     }
@@ -114,6 +121,47 @@ const Watermark = () => {
       link.click();
     });
     toast.success('Download started for all images');
+  };
+
+  // NEW: Build FormData exactly like standalone settings
+  const submitWatermarkJob = async (images) => {
+    // images: File[]
+    if (!images || images.length === 0) {
+      // ...existing code to notify user...
+      return;
+    }
+    if (watermarkMode === 'image' && !watermarkFile) {
+      // ...existing code to notify user watermark file missing...
+      return;
+    }
+
+    const form = new FormData();
+    images.forEach((f) => form.append('images', f));
+    if (watermarkMode === 'image') {
+      form.append('watermark', watermarkFile);
+    }
+    const settings = {
+      pos: settings.position,                                   // 'NW' | 'NE' | 'SW' | 'SE'
+      padding: [[settings.paddingX, settings.paddingUnit], [settings.paddingY, settings.paddingUnit]],         // ((x_pad, unit), (y_pad, unit))
+      scale: !!settings.autoResize,                         // auto resize
+      opacity: Math.max(0, Math.min(1, settings.opacity / 100)), // 0..1 factor
+      mode: watermarkMode,                             // 'image' | 'text'
+      text: watermarkMode === 'text' ? watermarkText : null,
+      text_size: textSize,
+      text_color: textColor
+    };
+    form.append('settings', JSON.stringify(settings));
+
+    // ...existing code to POST to backend...
+    // Example:
+    /*
+    const res = await fetch('/api/watermark', {
+      method: 'POST',
+      body: form
+    });
+    if (!res.ok) throw new Error('Watermarking failed');
+    // handle response (download zip or array of files)
+    */
   };
 
   return (
@@ -230,47 +278,62 @@ const Watermark = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mode
+                  </label>
+                  <div className="flex space-x-4">
+                    <label className="inline-flex items-center">
+                      <input type="radio" name="wm-mode" value="image" checked={watermarkMode==='image'} onChange={() => setWatermarkMode('image')} />
+                      <span className="ml-2">Image</span>
+                    </label>
+                    <label className="inline-flex items-center">
+                      <input type="radio" name="wm-mode" value="text" checked={watermarkMode==='text'} onChange={() => setWatermarkMode('text')} />
+                      <span className="ml-2">Text</span>
+                    </label>
+                  </div>
+                </div>
+
+                {watermarkMode === 'image' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Watermark source
+                    </label>
+                    <input type="file" accept="image/*" onChange={(e)=> setWatermarkFile(e.target.files?.[0] || null)} />
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Text watermark
+                      </label>
+                      <input className="input w-full" value={watermarkText} onChange={(e)=> setWatermarkText(e.target.value)} placeholder="Enter watermark text" />
+                    </div>
+                    <div className="flex space-x-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Text size
+                        </label>
+                        <input type="number" min="6" className="input w-24" value={textSize} onChange={(e)=> setTextSize(parseInt(e.target.value || 0, 10))} />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Color (name or hex)
+                        </label>
+                        <input className="input w-40" value={textColor} onChange={(e)=> setTextColor(e.target.value)} placeholder="#FFFFFF or red" />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Position
                   </label>
-                  <select
-                    value={settings.position}
-                    onChange={(e) => setSettings({...settings, position: e.target.value})}
-                    className="input"
-                  >
-                    {positions.map(pos => (
-                      <option key={pos.value} value={pos.value}>
-                        {pos.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Opacity: {settings.opacity}%
-                  </label>
-                  <input
-                    type="range"
-                    min="10"
-                    max="100"
-                    value={settings.opacity}
-                    onChange={(e) => setSettings({...settings, opacity: parseInt(e.target.value)})}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Scale: {settings.scale}%
-                  </label>
-                  <input
-                    type="range"
-                    min="5"
-                    max="50"
-                    value={settings.scale}
-                    onChange={(e) => setSettings({...settings, scale: parseInt(e.target.value)})}
-                    className="w-full"
-                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="inline-flex items-center"><input type="radio" name="pos" value="NW" checked={settings.position==='NW'} onChange={()=> setSettings({...settings, position:'NW'})} /><span className="ml-2">Top left</span></label>
+                    <label className="inline-flex items-center"><input type="radio" name="pos" value="NE" checked={settings.position==='NE'} onChange={()=> setSettings({...settings, position:'NE'})} /><span className="ml-2">Top right</span></label>
+                    <label className="inline-flex items-center"><input type="radio" name="pos" value="SW" checked={settings.position==='SW'} onChange={()=> setSettings({...settings, position:'SW'})} /><span className="ml-2">Bottom left</span></label>
+                    <label className="inline-flex items-center"><input type="radio" name="pos" value="SE" checked={settings.position==='SE'} onChange={()=> setSettings({...settings, position:'SE'})} /><span className="ml-2">Bottom right</span></label>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -344,7 +407,12 @@ const Watermark = () => {
 
               <button
                 onClick={handleProcess}
-                disabled={isProcessing || images.length === 0 || !watermarkImage}
+                // Enable button in text mode even without a watermark image/file
+                disabled={
+                  isProcessing ||
+                  images.length === 0 ||
+                  (watermarkMode === 'image' && !watermarkImage && !watermarkFile)
+                }
                 className="btn-primary w-full mt-6 flex items-center justify-center space-x-2"
               >
                 {isProcessing ? (
