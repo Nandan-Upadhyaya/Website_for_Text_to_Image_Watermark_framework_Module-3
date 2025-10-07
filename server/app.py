@@ -27,20 +27,26 @@ import torch
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+# Add a guard to avoid duplicate logs when reloader is active
+RUN_MAIN = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+
 # Add Module-2 to Python path
 MODULE2_PATH = Path(__file__).parent.parent.parent / "Module-2"
 if str(MODULE2_PATH) not in sys.path:
     sys.path.insert(0, str(MODULE2_PATH))
 
-print(f"🔍 [SERVER] Added Module-2 path: {MODULE2_PATH}")
+if RUN_MAIN:
+    print(f"🔍 [SERVER] Added Module-2 path: {MODULE2_PATH}")
 
 # Try to import the evaluator
 try:
     from image_prompt_evaluator import ImagePromptEvaluator
     EVALUATOR_AVAILABLE = True
-    print("✅ [SERVER] ImagePromptEvaluator imported successfully")
+    if RUN_MAIN:
+        print("✅ [SERVER] ImagePromptEvaluator imported successfully")
 except ImportError as e:
-    print(f"❌ [SERVER] Failed to import ImagePromptEvaluator: {e}")
+    if RUN_MAIN:
+        print(f"❌ [SERVER] Failed to import ImagePromptEvaluator: {e}")
     EVALUATOR_AVAILABLE = False
 
 # Import configuration and wrapper module
@@ -411,7 +417,8 @@ def evaluate_single_image():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5001'))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Re-enable the reloader for auto-restart on code changes
+    app.run(host='0.0.0.0', port=port, debug=True, use_reloader=True)
 
 
 

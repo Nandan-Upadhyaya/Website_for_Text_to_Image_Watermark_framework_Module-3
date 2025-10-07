@@ -164,6 +164,29 @@ const Watermark = () => {
     */
   };
 
+  // NEW: import selected images from TextToImage via sessionStorage
+  React.useEffect(() => {
+    const raw = sessionStorage.getItem('watermarkSelectionData');
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        const selected = (parsed.images || []).map(item => ({
+          id: Date.now() + Math.random(),
+          file: null, // coming from generator, no File object
+          preview: item.url,
+          name: item.name || 'selected.png'
+        }));
+        if (selected.length > 0) {
+          setImages(prev => [...selected, ...prev]);
+        }
+      } catch (e) {
+        // ignore parse errors
+      } finally {
+        sessionStorage.removeItem('watermarkSelectionData');
+      }
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container">

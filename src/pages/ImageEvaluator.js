@@ -14,6 +14,8 @@ import {
   ArrowDownTrayIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+// NEW: navigate to Watermark page after selection
+import { useNavigate } from 'react-router-dom';
 
 const ImageEvaluator = () => {
   const [image, setImage] = useState(null);
@@ -32,21 +34,47 @@ const ImageEvaluator = () => {
   const [autoEvaluateEnabled, setAutoEvaluateEnabled] = useState(true);
   const [isAutoEvaluating, setIsAutoEvaluating] = useState(false);
   const [recommendations, setRecommendations] = useState(null);
+  // NEW: post-evaluation dialog and selection flows
+  const [showPostEvalDialog, setShowPostEvalDialog] = useState(false);
+  const [selectingForWatermark, setSelectingForWatermark] = useState(false);
+  const [selectedForWatermark, setSelectedForWatermark] = useState(new Set());
+  const [selectingForDownload, setSelectingForDownload] = useState(false);
+  const [selectedForDownload, setSelectedForDownload] = useState(new Set());
+  // NEW: manual (non-auto) upload tracking and selection states
+  const [manualUploadedImages, setManualUploadedImages] = useState([]);
+  const [showManualPostEvalDialog, setShowManualPostEvalDialog] = useState(false);
+  const [selectingManualForWatermark, setSelectingManualForWatermark] = useState(false);
+  const [selectedManualForWatermark, setSelectedManualForWatermark] = useState(new Set());
+  // NEW: manual batch navigation and per-image results
+  const [manualIndex, setManualIndex] = useState(0);
+  const [manualResults, setManualResults] = useState([]);
+  // NEW: manual evaluating state
+  const [isManualEvaluating, setIsManualEvaluating] = useState(false);
+
+  const navigate = useNavigate();
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
       'image/*': ['.png', '.jpg', '.jpeg', '.webp']
     },
+    // CHANGED: allow multi-upload and track manually uploaded images for later selection
     onDrop: (acceptedFiles) => {
-      if (acceptedFiles.length > 0) {
-        const file = acceptedFiles[0];
-        setImage({
-          file,
-          preview: URL.createObjectURL(file)
-        });
-      }
+      if (!acceptedFiles || acceptedFiles.length === 0) return;
+      const newItems = acceptedFiles.map((file, idx) => ({
+        id: Date.now() + idx,
+        file,
+        preview: URL.createObjectURL(file),
+        url: URL.createObjectURL(file),
+        name: file.name
+      }));
+      setManualUploadedImages(prev => [...prev, ...newItems]);
+      // Maintain single-image evaluation behavior: use the first of this batch
+      const file = acceptedFiles[0];
+      setImage({ file, preview: URL.createObjectURL(file) });
+      // NEW: reset manual navigation to the first image of the manual batch
+      setManualIndex(0);
     },
-    multiple: false
+    multiple: true
   });
 
   // NEW: Check for auto-evaluation data on component mount
@@ -252,6 +280,8 @@ const ImageEvaluator = () => {
       // Generate recommendations after all evaluations
       generateRecommendations();
       toast.success('Automatic evaluation completed for all images!');
+      // NEW: show post-evaluation action dialog
+      setShowPostEvalDialog(true);
       
     } catch (error) {
       console.error('Auto-evaluation failed:', error);
@@ -351,12 +381,27 @@ const ImageEvaluator = () => {
         throw new Error(`Cannot reach backend API: ${testError.message}`);
       }
 
-      // Use the extracted evaluation method
-      await evaluateCurrentImage(currentImageIndex, null, image.file);
+      // NEW: pass proper index for manual vs auto
+      const evalIndex = isAutoMode ? currentImageIndex : manualIndex;
+      const fresh = await evaluateCurrentImage(evalIndex, null, image.file);
+      // NEW: store per-image results for manual batch
+      if (!isAutoMode && manualUploadedImages.length > 0) {
+        setManualResults(prev => {
+          const filtered = prev.filter(r => r.imageIndex !== manualIndex);
+          return [...filtered, {
+            imageIndex: manualIndex,
+            imageId: manualUploadedImages[manualIndex]?.id,
+            result: fresh
+          }];
+        });
+      }
       
       console.log("✅ [FRONTEND] Results transformed successfully");
       toast.success('Evaluation completed successfully!');
-      
+      // NEW: If not in auto mode, show manual post-evaluation watermark dialog
+      if (!isAutoMode) {
+        setShowManualPostEvalDialog(true);
+      }
     } catch (error) {
       console.error("❌ [FRONTEND] Evaluation failed:", error);
       toast.error(`Failed to evaluate: ${error.message}`);
@@ -453,6 +498,234 @@ const ImageEvaluator = () => {
             console.log(`❌ No analysis found for Image ${prevIndex + 1}`);
           }
         });
+    }
+  };
+
+  // NEW: manual navigation helpers
+  const loadManualImageAt = (idx) => {
+    const item = manualUploadedImages[idx];
+    if (!item) return;
+    setImage({ file: item.file, preview: item.preview });
+    const existing = manualResults.find(r => r.imageIndex === idx);
+    if (existing) {
+      setEvaluation(existing.result);
+      setEvaluationKey(prev => prev + 1);
+    } else {
+      setEvaluation(null);
+    }
+  };
+
+  const handleManualNextImage = () => {
+    if (manualUploadedImages.length < 2) return;
+    const nextIdx = Math.min(manualUploadedImages.length - 1, manualIndex + 1);
+    if (nextIdx !== manualIndex) {
+      setManualIndex(nextIdx);
+      loadManualImageAt(nextIdx);
+    }
+  };
+
+  const handleManualPreviousImage = () => {
+    if (manualUploadedImages.length < 2) return;
+    const prevIdx = Math.max(0, manualIndex - 1);
+    if (prevIdx !== manualIndex) {
+      setManualIndex(prevIdx);
+      loadManualImageAt(prevIdx);
+    }
+  };
+
+  // === Missing selection helpers (POST-EVAL Watermarking/Download) ===
+  // Start selection mode for watermarking
+  const startPostEvalWatermarkSelection = () => {
+    setShowPostEvalDialog(false);
+    setSelectingForDownload(false);
+    setSelectedForDownload(new Set());
+    setSelectingForWatermark(true);
+    setSelectedForWatermark(new Set());
+  };
+
+  // Toggle selection for watermarking
+  const toggleSelectForWatermark = (id) => {
+    setSelectedForWatermark(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  // Cancel selection for watermarking
+  const cancelWatermarkSelection = () => {
+    setSelectingForWatermark(false);
+    setSelectedForWatermark(new Set());
+  };
+
+  // Send selected images to Watermark page
+  const sendSelectedToWatermark = () => {
+    const selected = autoEvaluationImages.filter(img => selectedForWatermark.has(img.id));
+    if (selected.length === 0) {
+      toast.error('Select at least one image');
+      return;
+    }
+    sessionStorage.setItem('watermarkSelectionData', JSON.stringify({
+      images: selected.map(img => ({ url: img.url, name: `generated-${img.id}.png` }))
+    }));
+    setSelectingForWatermark(false);
+    setSelectedForWatermark(new Set());
+    navigate('/watermark');
+  };
+
+  // Start selection mode for downloading
+  const startPostEvalDownloadSelection = () => {
+    setShowPostEvalDialog(false);
+    setSelectingForWatermark(false);
+    setSelectedForWatermark(new Set());
+    setSelectingForDownload(true);
+    setSelectedForDownload(new Set());
+  };
+
+  // Toggle selection for downloading
+  const toggleSelectForDownload = (id) => {
+    setSelectedForDownload(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  // Select all images for downloading
+  const selectAllForDownload = () => {
+    setSelectedForDownload(new Set(autoEvaluationImages.map(img => img.id)));
+  };
+
+  // NEW: Select all images for watermarking (post-evaluation flow)
+  const selectAllForWatermark = () => {
+    setSelectedForWatermark(new Set(autoEvaluationImages.map(img => img.id)));
+  };
+
+  // Download selected images
+  const downloadSelectedImages = () => {
+    const selected = autoEvaluationImages.filter(img => selectedForDownload.has(img.id));
+    if (selected.length === 0) {
+      toast.error('Select at least one image to download');
+      return;
+    }
+    selected.forEach(img => {
+      const link = document.createElement('a');
+      link.href = img.url;
+      link.download = `generated-${img.id}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+    toast.success(`Downloading ${selected.length} image(s)`);
+  };
+
+  // Cancel selection for downloading
+  const cancelDownloadSelection = () => {
+    setSelectingForDownload(false);
+    setSelectedForDownload(new Set());
+  };
+
+  // === Manual (non-auto) watermark selection helpers ===
+  // Derive the list of images eligible for manual selection (use uploaded list; fallback to current image)
+  const manualSelectionList = manualUploadedImages && manualUploadedImages.length > 0
+    ? manualUploadedImages
+    : (image ? [{ id: Date.now(), preview: image.preview, url: image.preview, name: image.file?.name || 'uploaded.png' }] : []);
+
+  const startManualWatermarkSelection = () => {
+    setShowManualPostEvalDialog(false);
+    setSelectingManualForWatermark(true);
+    setSelectedManualForWatermark(new Set());
+  };
+
+  const toggleSelectManualForWatermark = (id) => {
+    setSelectedManualForWatermark(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllManualForWatermark = () => {
+    setSelectedManualForWatermark(new Set(manualSelectionList.map(img => img.id)));
+  };
+
+  const sendSelectedManualToWatermark = () => {
+    const selected = manualSelectionList.filter(img => selectedManualForWatermark.has(img.id));
+    if (selected.length === 0) {
+      toast.error('Select at least one image');
+      return;
+    }
+    sessionStorage.setItem('watermarkSelectionData', JSON.stringify({
+      images: selected.map(img => ({
+        url: img.preview || img.url,
+        name: img.name || `uploaded-${img.id}.png`
+      }))
+    }));
+    setSelectingManualForWatermark(false);
+    setSelectedManualForWatermark(new Set());
+    navigate('/watermark');
+  };
+
+  const cancelManualWatermarkSelection = () => {
+    setSelectingManualForWatermark(false);
+    setSelectedManualForWatermark(new Set());
+  };
+
+  // NEW: Evaluate all manually uploaded images (Manual Mode only)
+  const startManualEvaluateAll = async () => {
+    if (isAutoMode) return; // safety
+    if (manualUploadedImages.length === 0) {
+      toast.error('Upload images first');
+      return;
+    }
+    if (!prompt.trim()) {
+      toast.error('Enter a prompt to evaluate');
+      return;
+    }
+
+    setIsManualEvaluating(true);
+    toast.success('Starting evaluation of all uploaded images...');
+
+    try {
+      for (let i = 0; i < manualUploadedImages.length; i++) {
+        // Skip if already evaluated
+        if (manualResults.some(r => r.imageIndex === i)) continue;
+
+        const item = manualUploadedImages[i];
+        // Update UI preview and index
+        setManualIndex(i);
+        setImage({ file: item.file, preview: item.preview });
+
+        // Small delay to let preview render
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        // Evaluate current file with a unique evaluationId
+        const evalId = `manual-${i}-${Date.now()}`;
+        try {
+          const fresh = await evaluateCurrentImage(i, evalId, item.file);
+          // Store per-image results for manual batch
+          setManualResults(prev => {
+            const filtered = prev.filter(r => r.imageIndex !== i);
+            return [...filtered, { imageIndex: i, imageId: item.id, result: fresh }];
+          });
+          setEvaluationKey(prev => prev + 1);
+        } catch (err) {
+          console.error(`Manual evaluation failed for image ${i + 1}:`, err);
+          toast.error(`Evaluation failed for image ${i + 1}`);
+        }
+
+        // Small delay so user sees result
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      toast.success('Manual evaluation completed for all uploaded images!');
+      // Show manual post-evaluation watermark dialog
+      setShowManualPostEvalDialog(true);
+    } catch (error) {
+      console.error('Manual evaluate-all failed:', error);
+      toast.error('Manual Evaluate All failed.');
+    } finally {
+      setIsManualEvaluating(false);
     }
   };
 
@@ -587,6 +860,50 @@ const ImageEvaluator = () => {
                     >
                       →
                     </button>
+                  </div>
+                )}
+                {/* Manual navigation (non-auto mode) */}
+                {!isAutoMode && manualUploadedImages.length > 1 && (
+                  <div className="ml-auto flex items-center space-x-2">
+                    <button
+                      onClick={handleManualPreviousImage}
+                      disabled={manualIndex === 0 || isEvaluating}
+                      className="p-1 rounded text-gray-400 hover:text-gray-600 disabled:opacity-50 transition-colors"
+                      title={`Go to Image ${manualIndex} ${manualResults.find(r => r.imageIndex === manualIndex - 1) ? '(Analyzed)' : '(Not analyzed)'}`}
+                    >
+                      ←
+                    </button>
+                    <span className="text-xs text-gray-500">
+                      {manualIndex + 1}/{manualUploadedImages.length}
+                    </span>
+                    <button
+                      onClick={handleManualNextImage}
+                      disabled={manualIndex === manualUploadedImages.length - 1 || isEvaluating}
+                      className="p-1 rounded text-gray-400 hover:text-gray-600 disabled:opacity-50 transition-colors"
+                      title={`Go to Image ${manualIndex + 2} ${manualResults.find(r => r.imageIndex === manualIndex + 1) ? '(Analyzed)' : '(Not analyzed)'}`}
+                    >
+                      →
+                    </button>
+                  </div>
+                )}
+                {/* NEW: Manual Evaluate All controls */}
+                {!isAutoMode && manualUploadedImages.length > 0 && (
+                  <div className="ml-4 flex items-center space-x-2">
+                    {!isManualEvaluating && manualResults.length < manualUploadedImages.length && (
+                      <button
+                        onClick={startManualEvaluateAll}
+                        className="flex items-center space-x-1 px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+                      >
+                        <PlayIcon className="w-3 h-3" />
+                        <span>Evaluate All</span>
+                      </button>
+                    )}
+                    {isManualEvaluating && (
+                      <div className="flex items-center space-x-1 text-green-600">
+                        <div className="animate-spin w-3 h-3 border border-green-600 border-t-transparent rounded-full"></div>
+                        <span>Evaluating...</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </h2>
@@ -736,7 +1053,7 @@ const ImageEvaluator = () => {
             {evaluation ? (
               <>
                 {/* Show current image info in results header */}
-                {isAutoMode && (
+                {isAutoMode ? (
                   <div className="card p-3 bg-gray-50 border border-gray-200">
                     <p className="text-sm text-gray-600 text-center">
                       📊 Showing results for <strong>Image {currentImageIndex + 1}</strong> of {autoEvaluationImages.length}
@@ -749,6 +1066,21 @@ const ImageEvaluator = () => {
                       </span>
                     </p>
                   </div>
+                ) : (
+                  // NEW: Manual-mode results header
+                  manualUploadedImages.length > 0 && (
+                    <div className="card p-3 bg-gray-50 border border-gray-200">
+                      <p className="text-sm text-gray-600 text-center">
+                        📊 Showing results for <strong>Manual Image {manualIndex + 1}</strong> of {manualUploadedImages.length}
+                        {manualResults.find(r => r.imageIndex === manualIndex) && (
+                          <span className="ml-2 text-green-600">✓ Analyzed</span>
+                        )}
+                        <span className="ml-2 text-xs text-gray-400">
+                          (eval #{evaluationKey} | {evaluation.evaluationId ? 'FRESH' : 'STORED'} | {evaluation.percentageMatch?.toFixed(1)}%)
+                        </span>
+                      </p>
+                    </div>
+                  )
                 )}
 
                 {/* Batch results summary in auto mode */}
@@ -949,11 +1281,220 @@ const ImageEvaluator = () => {
             )}
           </div>
         </div>
+
+        {/* NEW: Manual batch indicator (non-auto mode) */}
+        {!isAutoMode && manualUploadedImages.length > 0 && (
+          <div className="text-center mb-4">
+            <div className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-800 rounded-full text-sm">
+              Manual Batch: Image {manualIndex + 1} of {manualUploadedImages.length}
+            </div>
+          </div>
+        )}
+
+        {/* Selection toolbars/grids (post-evaluation, manual, etc.) */}
+        {(selectingForWatermark || selectingForDownload) && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold text-gray-900">
+                {selectingForWatermark ? 'Select Images for Watermarking' : 'Select Images to Download'}
+              </h3>
+              <div className="flex items-center space-x-3">
+                {/* UPDATED: show Select All for either mode */}
+                {selectingForDownload && (
+                  <button
+                    className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition"
+                    onClick={selectAllForDownload}
+                  >
+                    Select All
+                  </button>
+                )}
+                {/* NEW: Select All in watermark selection mode */}
+                {selectingForWatermark && (
+                  <button
+                    className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition"
+                    onClick={selectAllForWatermark}
+                  >
+                    Select All
+                  </button>
+                )}
+                {selectingForWatermark ? (
+                  <>
+                    <button
+                      className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 transition"
+                      onClick={sendSelectedToWatermark}
+                    >
+                      Send to Watermark ({selectedForWatermark.size})
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition"
+                      onClick={cancelWatermarkSelection}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition"
+                      onClick={downloadSelectedImages}
+                    >
+                      Download {selectedForDownload.size} selected image{selectedForDownload.size === 1 ? '' : 's'}
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition"
+                      onClick={cancelDownloadSelection}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {autoEvaluationImages.map(img => {
+                const isSelected = selectingForWatermark
+                  ? selectedForWatermark.has(img.id)
+                  : selectedForDownload.has(img.id);
+                return (
+                  <div key={img.id} className="card p-4 relative">
+                    <img
+                      src={img.url}
+                      alt={`generated-${img.id}`}
+                      className={`w-full aspect-square object-cover rounded-lg ${isSelected ? 'ring-4 ring-primary-500' : ''}`}
+                    />
+                    <button
+                      onClick={() => (selectingForWatermark ? toggleSelectForWatermark(img.id) : toggleSelectForDownload(img.id))}
+                      className="absolute top-3 left-3 w-6 h-6 rounded bg-white border-2 border-gray-300 flex items-center justify-center"
+                      title="Select image"
+                    >
+                      {isSelected && (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-primary-600" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3-3a1 1 0 111.414-1.414l2.293 2.293 6.543-6.543a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* NEW: Manual (non-auto) selection toolbar and grid */}
+        {(!isAutoMode) && selectingManualForWatermark && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold text-gray-900">Select Images for Watermarking</h3>
+              <div className="flex items-center space-x-3">
+                <button
+                  className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition"
+                  onClick={selectAllManualForWatermark}
+                >
+                  Select All
+                </button>
+                <button
+                  className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 transition"
+                  onClick={sendSelectedManualToWatermark}
+                >
+                  Send to Watermark ({selectedManualForWatermark.size})
+                </button>
+                <button
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition"
+                  onClick={cancelManualWatermarkSelection}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {manualSelectionList.map(img => {
+                const isSelected = selectedManualForWatermark.has(img.id);
+                return (
+                  <div key={img.id} className="card p-4 relative">
+                    <img
+                      src={img.preview || img.url}
+                      alt={img.name || `uploaded-${img.id}`}
+                      className={`w-full aspect-square object-cover rounded-lg ${isSelected ? 'ring-4 ring-primary-500' : ''}`}
+                    />
+                    <button
+                      onClick={() => toggleSelectManualForWatermark(img.id)}
+                      className="absolute top-3 left-3 w-6 h-6 rounded bg-white border-2 border-gray-300 flex items-center justify-center"
+                      title="Select image"
+                    >
+                      {isSelected && (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-primary-600" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3-3a1 1 0 111.414-1.414l2.293 2.293 6.543-6.543a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* NEW: Post-evaluation action dialog */}
+      {showPostEvalDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 animate-fade-in">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Post-Evaluation Actions</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Evaluations are complete. What would you like to do next?
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                onClick={startPostEvalDownloadSelection}
+                className="w-full px-4 py-3 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm md:text-base text-left whitespace-normal break-words leading-snug"
+              >
+                No, Directly select and download generated images
+              </button>
+              <button
+                onClick={startPostEvalWatermarkSelection}
+                className="w-full px-4 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm md:text-base text-left whitespace-normal break-words leading-snug"
+              >
+                Select Images for watermarking
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW: Manual post-evaluation dialog (non-auto mode) */}
+      {showManualPostEvalDialog && !isAutoMode && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 animate-fade-in">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Do you want to Watermark your analyzed image?</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                You can select one or more of your uploaded images to watermark.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                onClick={() => setShowManualPostEvalDialog(false)}
+                className="w-full px-4 py-3 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm md:text-base text-left whitespace-normal break-words leading-snug"
+              >
+                No
+              </button>
+              <button
+                onClick={startManualWatermarkSelection}
+                className="w-full px-4 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm md:text-base text-left whitespace-normal break-words leading-snug"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default ImageEvaluator;
 
-             

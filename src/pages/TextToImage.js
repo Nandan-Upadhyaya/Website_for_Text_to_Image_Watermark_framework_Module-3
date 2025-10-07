@@ -16,6 +16,12 @@ const TextToImage = () => {
   });
   const [showEvaluationDialog, setShowEvaluationDialog] = useState(false);
   const [pendingEvaluationData, setPendingEvaluationData] = useState(null);
+  // NEW: selection mode for watermarking
+  const [selectingForWatermark, setSelectingForWatermark] = useState(false);
+  const [selectedForWatermark, setSelectedForWatermark] = useState(new Set());
+  // NEW: selection mode for download
+  const [selectingForDownload, setSelectingForDownload] = useState(false);
+  const [selectedForDownload, setSelectedForDownload] = useState(new Set());
   const navigate = useNavigate();
 
   const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
@@ -163,8 +169,108 @@ const TextToImage = () => {
     setPendingEvaluationData(null);
   };
 
+  // NEW: start selection mode for watermarking
+  const startWatermarkSelection = () => {
+    setShowEvaluationDialog(false);
+    setSelectingForWatermark(true);
+    setSelectedForWatermark(new Set());
+  };
+
+  // NEW: toggle image selection
+  const toggleSelectForWatermark = (id) => {
+    setSelectedForWatermark(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  // NEW: send selected images to Watermark page
+  const sendSelectedToWatermark = () => {
+    const selected = generatedImages.filter(img => selectedForWatermark.has(img.id));
+    if (selected.length === 0) {
+      toast.error('Select at least one image');
+      return;
+    }
+    sessionStorage.setItem('watermarkSelectionData', JSON.stringify({
+      images: selected.map(img => ({
+        url: img.url,
+        name: `generated-${img.id}.png`
+      }))
+    }));
+    setSelectingForWatermark(false);
+    setSelectedForWatermark(new Set());
+    navigate('/watermark');
+  };
+
+  // NEW: cancel selection mode
+  const cancelWatermarkSelection = () => {
+    setSelectingForWatermark(false);
+    setSelectedForWatermark(new Set());
+  };
+
+  // NEW: start selection mode for downloading (triggered from dialog)
+  const startDownloadSelection = () => {
+    setShowEvaluationDialog(false);
+    setSelectingForWatermark(false);
+    setSelectedForWatermark(new Set());
+    setSelectingForDownload(true);
+    setSelectedForDownload(new Set());
+  };
+
+  // NEW: toggle/select helpers for download mode
+  const toggleSelectForDownload = (id) => {
+    setSelectedForDownload(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const selectAllForDownload = () => {
+    setSelectedForDownload(new Set(generatedImages.map(img => img.id)));
+  };
+  const cancelDownloadSelection = () => {
+    setSelectingForDownload(false);
+    setSelectedForDownload(new Set());
+  };
+  const downloadSelectedImages = () => {
+    const selected = generatedImages.filter(img => selectedForDownload.has(img.id));
+    if (selected.length === 0) {
+      toast.error('Select at least one image to download');
+      return;
+    }
+    selected.forEach(img => {
+      const link = document.createElement('a');
+      link.href = img.url;
+      link.download = `generated-${img.id}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+    toast.success(`Downloading ${selected.length} image(s)`);
+  };
+
+  // Helpers to drive unified selection UI on the grid
+  const isAnySelecting = selectingForWatermark || selectingForDownload;
+  const isSelected = (id) => {
+    return selectingForWatermark
+      ? selectedForWatermark.has(id)
+      : selectingForDownload
+      ? selectedForDownload.has(id)
+      : false;
+  };
+  const toggleSelectActive = (id) => {
+    if (selectingForWatermark) toggleSelectForWatermark(id);
+    else if (selectingForDownload) toggleSelectForDownload(id);
+  };
+
   const setExamplePrompt = (examplePrompt) => {
     setPrompt(examplePrompt);
+  };
+
+  // NEW: Select all images for watermarking (CLIP dialog flow)
+  const selectAllForWatermark = () => {
+    setSelectedForWatermark(new Set(generatedImages.map(img => img.id)));
   };
 
   return (
@@ -314,21 +420,89 @@ const TextToImage = () => {
           <div className="mt-8">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-900">Generated Images</h2>
-              <button
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition"
-                onClick={() => setGeneratedImages([])}
-              >
-                Clear Images
-              </button>
+              <div className="flex items-center space-x-3">
+                {/* NEW: watermark selection toolbar (unchanged) */}
+                {selectingForWatermark && (
+                  <>
+                    {/* NEW: Select All button for watermark selection */}
+                    <button
+                      className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition"
+                      onClick={selectAllForWatermark}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 transition"
+                      onClick={sendSelectedToWatermark}
+                    >
+                      Send to Watermark ({selectedForWatermark.size})
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition"
+                      onClick={cancelWatermarkSelection}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                {/* NEW: download selection toolbar */}
+                {selectingForDownload && (
+                  <>
+                    <button
+                      className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition"
+                      onClick={selectAllForDownload}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition"
+                      onClick={downloadSelectedImages}
+                    >
+                      Download {selectedForDownload.size} selected image{selectedForDownload.size === 1 ? '' : 's'}
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition"
+                      onClick={cancelDownloadSelection}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                {/* ...existing code... */}
+                {!isAnySelecting && (
+                  <button
+                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition"
+                    onClick={() => setGeneratedImages([])}
+                  >
+                    Clear Images
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {generatedImages.map((image) => (
-                <div key={image.id} className="card p-4 image-fade-in">
+                <div key={image.id} className="card p-4 image-fade-in relative">
+                  {/* ...existing code... */}
                   <img
                     src={image.url}
                     alt={image.prompt}
-                    className="w-full aspect-square object-cover rounded-lg mb-3"
+                    className={`w-full aspect-square object-cover rounded-lg mb-3 ${isAnySelecting && isSelected(image.id) ? 'ring-4 ring-primary-500' : ''}`}
                   />
+                  {/* NEW: selection checkbox overlay for both modes */}
+                  {isAnySelecting && (
+                    <button
+                      onClick={() => toggleSelectActive(image.id)}
+                      className="absolute top-3 left-3 w-6 h-6 rounded bg-white border-2 border-gray-300 flex items-center justify-center"
+                      title="Select image"
+                    >
+                      {isSelected(image.id) && (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-primary-600" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3-3a1 1 0 111.414-1.414l2.293 2.293 6.543-6.543a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
+                  {/* ...existing code... */}
                   <p className="text-sm text-gray-600 line-clamp-2 mb-2">
                     "{image.prompt}"
                   </p>
@@ -379,18 +553,29 @@ const TextToImage = () => {
               </div>
             </div>
             
-            <div className="flex space-x-3">
+            {/* UPDATED: responsive buttons with better wrapping */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
-                onClick={handleAutoEvaluationDecline}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                // CHANGED: start download selection instead of simple decline
+                onClick={startDownloadSelection}
+                className="w-full px-4 py-3 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm md:text-base text-left whitespace-normal break-words leading-snug"
               >
-                No, Thanks
+                No, Directly select and download generated images
               </button>
               <button
                 onClick={handleAutoEvaluationAccept}
-                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                className="w-full px-4 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm md:text-base text-left whitespace-normal break-words leading-snug"
               >
                 Yes, Analyze!
+              </button>
+            </div>
+            {/* UPDATED: third action button styling */}
+            <div className="mt-3">
+              <button
+                onClick={startWatermarkSelection}
+                className="w-full px-4 py-3 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm md:text-base text-left whitespace-normal break-words leading-snug"
+              >
+                No, Directly select Images for watermarking
               </button>
             </div>
           </div>
@@ -401,4 +586,4 @@ const TextToImage = () => {
 };
 
 export default TextToImage;
-              
+
