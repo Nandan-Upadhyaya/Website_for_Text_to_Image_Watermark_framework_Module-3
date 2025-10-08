@@ -4,6 +4,7 @@ module.exports = {
     "./src/**/*.{js,jsx,ts,tsx}",
     "./public/index.html",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
@@ -52,6 +53,8 @@ module.exports = {
         'fade-in': 'fadeIn 0.5s ease-in-out',
         'slide-up': 'slideUp 0.3s ease-out',
         'pulse-slow': 'pulse 3s infinite',
+        'theme-switch': 'themeSwitch 0.6s ease-in-out',
+        'bounce-gentle': 'bounceGentle 0.6s ease-in-out',
       },
       keyframes: {
         fadeIn: {
@@ -61,6 +64,15 @@ module.exports = {
         slideUp: {
           '0%': { transform: 'translateY(10px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+        themeSwitch: {
+          '0%': { transform: 'scale(1) rotate(0deg)' },
+          '50%': { transform: 'scale(1.1) rotate(180deg)' },
+          '100%': { transform: 'scale(1) rotate(360deg)' },
+        },
+        bounceGentle: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-4px)' },
         },
       },
     },

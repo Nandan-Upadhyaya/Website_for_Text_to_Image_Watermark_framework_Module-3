@@ -44,17 +44,17 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
       {/* Hero Section */}
       <div className="container py-16">
         <div className="text-center max-w-4xl mx-auto">
-          <h1 className="text-5xl font-bold text-gray-900 mb-6">
+          <h1 className="text-5xl font-bold text-gray-900 dark:text-gray-100 mb-6">
             AI Image Processing
             <span className="block text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-accent-600">
               Suite
             </span>
           </h1>
-          <p className="text-xl text-gray-600 mb-8 leading-relaxed">
+          <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 leading-relaxed">
             Generate, evaluate, and protect your AI-created images with our comprehensive suite of tools.
             Powered by cutting-edge machine learning models for professional results.
           </p>
@@ -75,11 +75,11 @@ const Dashboard = () => {
             const IconComponent = stat.icon;
             return (
               <div key={index} className="card p-6 text-center">
-                <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                  <IconComponent className="w-6 h-6 text-primary-600" />
+                <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center mx-auto mb-4">
+                  <IconComponent className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                 </div>
-                <div className="text-3xl font-bold text-gray-900 mb-2">{stat.value}</div>
-                <div className="text-gray-600">{stat.label}</div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">{stat.value}</div>
+                <div className="text-gray-600 dark:text-gray-400">{stat.label}</div>
               </div>
             );
           })}
@@ -89,10 +89,10 @@ const Dashboard = () => {
       {/* Features Grid */}
       <div className="container pb-16">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4">
             Three Powerful Modules
           </h2>
-          <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+          <p className="text-gray-600 dark:text-gray-300 text-lg max-w-2xl mx-auto">
             Each module is designed to handle a specific aspect of AI image processing,
             working together seamlessly for your workflow.
           </p>
@@ -112,19 +112,19 @@ const Dashboard = () => {
                 </div>
                 
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                     {feature.title}
                   </h3>
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
+                  <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
                     {feature.stats}
                   </span>
                 </div>
                 
-                <p className="text-gray-600 leading-relaxed mb-6">
+                <p className="text-gray-600 dark:text-gray-300 leading-relaxed mb-6">
                   {feature.description}
                 </p>
                 
-                <div className="flex items-center text-primary-600 font-medium group-hover:text-primary-700">
+                <div className="flex items-center text-primary-600 dark:text-primary-400 font-medium group-hover:text-primary-700 dark:group-hover:text-primary-300">
                   <span>Get Started</span>
                   <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -137,40 +137,40 @@ const Dashboard = () => {
       </div>
 
       {/* Workflow Section */}
-      <div className="bg-white py-16">
+      <div className="bg-white dark:bg-gray-800 py-16">
         <div className="container">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4">
               Simple Three-Step Workflow
             </h2>
-            <p className="text-gray-600 text-lg">
+            <p className="text-gray-600 dark:text-gray-300 text-lg">
               From concept to protected final product in just three steps
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="text-center">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl font-bold text-blue-600">1</span>
+              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">1</span>
               </div>
-              <h3 className="text-xl font-semibold mb-2">Generate</h3>
-              <p className="text-gray-600">Create images from text descriptions using DF-GAN</p>
+              <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">Generate</h3>
+              <p className="text-gray-600 dark:text-gray-300">Create images from text descriptions using DF-GAN</p>
             </div>
             
             <div className="text-center">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl font-bold text-green-600">2</span>
+              <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl font-bold text-green-600 dark:text-green-400">2</span>
               </div>
-              <h3 className="text-xl font-semibold mb-2">Evaluate</h3>
-              <p className="text-gray-600">Assess quality and prompt matching accuracy</p>
+              <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">Evaluate</h3>
+              <p className="text-gray-600 dark:text-gray-300">Assess quality and prompt matching accuracy</p>
             </div>
             
             <div className="text-center">
-              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl font-bold text-purple-600">3</span>
+              <div className="w-16 h-16 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">3</span>
               </div>
-              <h3 className="text-xl font-semibold mb-2">Protect</h3>
-              <p className="text-gray-600">Add watermarks to secure your creations</p>
+              <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">Protect</h3>
+              <p className="text-gray-600 dark:text-gray-300">Add watermarks to secure your creations</p>
             </div>
           </div>
         </div>

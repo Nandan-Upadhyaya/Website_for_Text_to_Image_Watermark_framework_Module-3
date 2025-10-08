@@ -274,14 +274,14 @@ const TextToImage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="container">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4">
             Text-to-Image Generation
           </h1>
-          <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+          <p className="text-gray-600 dark:text-gray-300 text-lg max-w-2xl mx-auto">
             Create stunning images from text descriptions using the DF-GAN model.
             Enter your prompt and customize the generation settings below.
           </p>
@@ -289,10 +289,10 @@ const TextToImage = () => {
           {/* Server Status Indicator */}
           <div className={`mt-4 inline-flex items-center px-4 py-2 rounded-full text-sm ${
             serverStatus.status === 'ready' 
-              ? 'bg-green-100 text-green-800' 
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' 
               : serverStatus.status === 'error'
-                ? 'bg-red-100 text-red-800'
-                : 'bg-yellow-100 text-yellow-800'
+                ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
+                : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
           }`}>
             <div className={`w-2 h-2 rounded-full mr-2 ${
               serverStatus.status === 'ready' 
@@ -311,8 +311,8 @@ const TextToImage = () => {
             {/* Prompt Input */}
             <div className="card p-6">
               <div className="flex items-center space-x-2 mb-4">
-                <SparklesIcon className="w-5 h-5 text-primary-600" />
-                <h2 className="text-xl font-semibold">Prompt</h2>
+                <SparklesIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Prompt</h2>
               </div>
               
               <textarea
@@ -325,7 +325,7 @@ const TextToImage = () => {
 
               {/* Example Prompts */}
               <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Example prompts for {datasets.find(d => d.value === settings.dataset)?.label}:
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -333,7 +333,7 @@ const TextToImage = () => {
                     <button
                       key={index}
                       onClick={() => setExamplePrompt(example)}
-                      className="text-left p-2 text-sm bg-gray-50 hover:bg-primary-50 hover:text-primary-700 rounded border text-gray-600 transition-colors"
+                      className="text-left p-2 text-sm bg-gray-50 dark:bg-gray-700 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-700 dark:hover:text-primary-400 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 transition-colors"
                       disabled={isGenerating}
                     >
                       "{example}"
@@ -369,13 +369,13 @@ const TextToImage = () => {
           <div className="space-y-6">
             <div className="card p-6">
               <div className="flex items-center space-x-2 mb-4">
-                <AdjustmentsHorizontalIcon className="w-5 h-5 text-primary-600" />
-                <h2 className="text-xl font-semibold">Settings</h2>
+                <AdjustmentsHorizontalIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Settings</h2>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Dataset
                   </label>
                   <select
@@ -393,7 +393,7 @@ const TextToImage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Number of Images
                   </label>
                   <input
@@ -419,14 +419,14 @@ const TextToImage = () => {
         {generatedImages.length > 0 && (
           <div className="mt-8">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Generated Images</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Generated Images</h2>
               <div className="flex items-center space-x-3">
                 {/* NEW: watermark selection toolbar (unchanged) */}
                 {selectingForWatermark && (
                   <>
                     {/* NEW: Select All button for watermark selection */}
                     <button
-                      className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition"
+                      className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition"
                       onClick={selectAllForWatermark}
                     >
                       Select All
@@ -438,7 +438,7 @@ const TextToImage = () => {
                       Send to Watermark ({selectedForWatermark.size})
                     </button>
                     <button
-                      className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition"
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500 transition"
                       onClick={cancelWatermarkSelection}
                     >
                       Cancel
@@ -449,7 +449,7 @@ const TextToImage = () => {
                 {selectingForDownload && (
                   <>
                     <button
-                      className="px-4 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition"
+                      className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition"
                       onClick={selectAllForDownload}
                     >
                       Select All
@@ -461,7 +461,7 @@ const TextToImage = () => {
                       Download {selectedForDownload.size} selected image{selectedForDownload.size === 1 ? '' : 's'}
                     </button>
                     <button
-                      className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition"
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-500 transition"
                       onClick={cancelDownloadSelection}
                     >
                       Cancel
