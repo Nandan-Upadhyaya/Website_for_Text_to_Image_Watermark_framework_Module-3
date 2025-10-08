@@ -15,15 +15,15 @@ const Watermark = () => {
   const [watermarkImage, setWatermarkImage] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processedImages, setProcessedImages] = useState([]);
+  const [previewGrid, setPreviewGrid] = useState([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [settings, setSettings] = useState({
-    position: 'bottom-right',
-    opacity: 80,
+    position: 'SE',
+    opacity: 80, // percent (0-100)
     scale: 20,
     paddingX: 5,
     paddingY: 5,
     paddingUnit: 'percentage',
-    prefix: '',
-    suffix: '',
     autoResize: true
   });
 
@@ -78,36 +78,115 @@ const Watermark = () => {
     setImages(prev => prev.filter(img => img.id !== id));
   };
 
+  const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    } catch (e) { reject(e); }
+  });
+  const urlToDataUrl = async (url) => {
+    // if it's already a data URL
+    if (typeof url === 'string' && url.startsWith('data:')) return url;
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await fileToDataUrl(blob);
+  };
+  const imageItemToDataUrl = async (item) => {
+    if (item?.file) return await fileToDataUrl(item.file);
+    if (item?.preview) return await urlToDataUrl(item.preview);
+    throw new Error('Invalid image item');
+  };
+  const getWatermarkDataUrl = async () => {
+    const f = watermarkFile || watermarkImage?.file;
+    if (!f) return null;
+    return await fileToDataUrl(f);
+  };
+  const mapPos = (p) => {
+    // Accept both human labels and codes, normalize to NW/NE/SW/SE
+    const v = (p || '').toUpperCase();
+    if (['NW','NE','SW','SE'].includes(v)) return v;
+    const map = {
+      'TOP-LEFT':'NW', 'TOP RIGHT':'NE', 'TOP-RIGHT':'NE',
+      'BOTTOM-LEFT':'SW', 'BOTTOM RIGHT':'SE', 'BOTTOM-RIGHT':'SE', 'CENTER':'SE'
+    };
+    return map[v] || 'SE';
+  };
+  const mapUnit = (u) => (u === '%' || (u || '').toLowerCase().startsWith('per')) ? '%' : 'px';
+
   const handleProcess = async () => {
     if (images.length === 0) {
       toast.error('Please select images to watermark');
       return;
     }
-    // Require watermark only in image mode
-    if (watermarkMode === 'image' && !watermarkImage && !watermarkFile) {
+    if (watermarkMode === 'image' && !(watermarkFile || watermarkImage?.file)) {
       toast.error('Please select a watermark image');
       return;
     }
-
     setIsProcessing(true);
     try {
-      // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Build payload for backend
+      const unit = mapUnit(settings.paddingUnit);
+      const imgsPayload = await Promise.all(images.map(async (img, idx) => ({
+        name: img.name || `image_${idx + 1}.png`,
+        url: await imageItemToDataUrl(img)
+      })));
+      const opacityFactor = Math.max(0, Math.min(1, (settings.opacity ?? 100) / 100));
+      const payload = {
+        images: imgsPayload,
+        mode: watermarkMode === 'text' ? 'text' : 'image',
+        pos: mapPos(settings.position),
+        padding: { x: parseInt(settings.paddingX || 0, 10), xUnit: unit, y: parseInt(settings.paddingY || 0, 10), yUnit: unit },
+        scale: !!settings.autoResize,
+        opacity: opacityFactor
+      };
+      // NEW: add top-level padding aliases for backend normalizer
+      payload.padx = parseInt(settings.paddingX || 0, 10);
+      payload.pady = parseInt(settings.paddingY || 0, 10);
+      payload.xUnit = unit;
+      payload.yUnit = unit;
+      if (payload.mode === 'image') {
+        const wmDataUrl = await getWatermarkDataUrl();
+        if (!wmDataUrl) throw new Error('Watermark image missing');
+        payload.watermarkDataUrl = wmDataUrl;
+      } else {
+        payload.text = (watermarkText || '').trim();
+        payload.textSize = parseInt(textSize || 32, 10);
+        payload.textColor = textColor || '#FFFFFF';
+      }
 
-      // Mock processed images
-      const processed = images.map(image => ({
-        id: image.id,
-        originalName: image.name,
-        processedName: `${settings.prefix}${image.name.split('.')[0]}${settings.suffix}.${image.name.split('.').pop()}`,
-        preview: image.preview, // In real app, this would be the watermarked image
-        downloadUrl: image.preview,
-        settings: { ...settings }
-      }));
-
+      // Call backend
+      const res = await fetch('/api/watermark/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      // Map response to UI list
+      const processed = (data.images || []).map((out, i) => {
+        const original = images[i];
+        const base = (original?.name || `image_${i + 1}`).split('.');
+        const ext = base.length > 1 ? base.pop() : 'png';
+        const baseName = base.join('.');
+        const processedName = `${baseName}.${ext}`;
+        return {
+          id: original?.id || Date.now() + Math.random(),
+          originalName: original?.name || `image_${i + 1}.${ext}`,
+          processedName,
+          preview: out.dataUrl,
+          downloadUrl: out.dataUrl,
+          settings: { ...settings, mode: payload.mode }
+        };
+      });
       setProcessedImages(processed);
-      toast.success(`Successfully watermarked ${images.length} image(s)!`);
-    } catch (error) {
-      toast.error('Failed to process images. Please try again.');
+      toast.success(`Successfully watermarked ${processed.length} image(s)!`);
+    } catch (err) {
+      console.error('Watermarking failed:', err);
+      toast.error(`Failed: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -121,47 +200,6 @@ const Watermark = () => {
       link.click();
     });
     toast.success('Download started for all images');
-  };
-
-  // NEW: Build FormData exactly like standalone settings
-  const submitWatermarkJob = async (images) => {
-    // images: File[]
-    if (!images || images.length === 0) {
-      // ...existing code to notify user...
-      return;
-    }
-    if (watermarkMode === 'image' && !watermarkFile) {
-      // ...existing code to notify user watermark file missing...
-      return;
-    }
-
-    const form = new FormData();
-    images.forEach((f) => form.append('images', f));
-    if (watermarkMode === 'image') {
-      form.append('watermark', watermarkFile);
-    }
-    const settings = {
-      pos: settings.position,                                   // 'NW' | 'NE' | 'SW' | 'SE'
-      padding: [[settings.paddingX, settings.paddingUnit], [settings.paddingY, settings.paddingUnit]],         // ((x_pad, unit), (y_pad, unit))
-      scale: !!settings.autoResize,                         // auto resize
-      opacity: Math.max(0, Math.min(1, settings.opacity / 100)), // 0..1 factor
-      mode: watermarkMode,                             // 'image' | 'text'
-      text: watermarkMode === 'text' ? watermarkText : null,
-      text_size: textSize,
-      text_color: textColor
-    };
-    form.append('settings', JSON.stringify(settings));
-
-    // ...existing code to POST to backend...
-    // Example:
-    /*
-    const res = await fetch('/api/watermark', {
-      method: 'POST',
-      body: form
-    });
-    if (!res.ok) throw new Error('Watermarking failed');
-    // handle response (download zip or array of files)
-    */
   };
 
   // NEW: import selected images from TextToImage via sessionStorage
@@ -187,6 +225,121 @@ const Watermark = () => {
     }
   }, []);
 
+  // NEW: build payload (shared shape with handleProcess)
+  const buildPayload = async (useSubset = false) => {
+    const unit = mapUnit(settings.paddingUnit);
+    const srcImgs = useSubset ? images.slice(0, Math.min(6, images.length)) : images;
+    const imgsPayload = await Promise.all(
+      srcImgs.map(async (img, idx) => ({
+        name: img.name || `image_${idx + 1}.png`,
+        url: await imageItemToDataUrl(img)
+      }))
+    );
+    const opacityFactor = Math.max(0, Math.min(1, (settings.opacity ?? 100) / 100));
+    const payload = {
+      images: imgsPayload,
+      mode: watermarkMode === 'text' ? 'text' : 'image',
+      pos: mapPos(settings.position),
+      padding: {
+        x: parseInt(settings.paddingX || 0, 10),
+        xUnit: unit,
+        y: parseInt(settings.paddingY || 0, 10),
+        yUnit: unit
+      },
+      scale: !!settings.autoResize,
+      opacity: opacityFactor
+    };
+    // NEW: add top-level padding aliases for backend normalizer
+    payload.padx = parseInt(settings.paddingX || 0, 10);
+    payload.pady = parseInt(settings.paddingY || 0, 10);
+    payload.xUnit = unit;
+    payload.yUnit = unit;
+    if (payload.mode === 'image') {
+      const wmDataUrl = await getWatermarkDataUrl();
+      if (!wmDataUrl) return null; // caller handles
+      payload.watermarkDataUrl = wmDataUrl;
+    } else {
+      payload.text = (watermarkText || '').trim();
+      payload.textSize = parseInt(textSize || 32, 10);
+      payload.textColor = textColor || '#FFFFFF';
+    }
+    return payload;
+  };
+
+  // NEW: server-backed live preview (debounced, cancellable)
+  React.useEffect(() => {
+    let cancelled = false;
+    let controller = new AbortController();
+    const run = async () => {
+      if (images.length === 0) {
+        setPreviewGrid([]);
+        return;
+      }
+      if (watermarkMode === 'image' && !(watermarkFile || watermarkImage?.file)) {
+        setPreviewGrid([]);
+        return;
+      }
+      // Debounce a bit to batch rapid changes
+      await new Promise(r => setTimeout(r, 200));
+      if (cancelled) return;
+
+      setPreviewLoading(true);
+      try {
+        const payload = await buildPayload(true);
+        if (!payload) {
+          setPreviewGrid([]);
+          setPreviewLoading(false);
+          return;
+        }
+        const res = await fetch('/api/watermark/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok || data.error) {
+          // On preview error, just clear previews silently
+          setPreviewGrid([]);
+          setPreviewLoading(false);
+          return;
+        }
+        const subset = images.slice(0, Math.min(6, images.length));
+        const thumbs = (data.images || []).map((out, i) => ({
+          id: subset[i]?.id || `preview-${i}`,
+          name: subset[i]?.name || `image_${i + 1}.png`,
+          url: out.dataUrl
+        }));
+        setPreviewGrid(thumbs);
+      } catch (e) {
+        if (!cancelled) setPreviewGrid([]);
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    };
+    run();
+
+    return () => {
+      cancelled = true;
+      try { controller.abort(); } catch {}
+    };
+  }, [
+    images,
+    watermarkMode,
+    watermarkFile,
+    watermarkImage,
+    watermarkText,
+    textSize,
+    textColor,
+    settings.position,
+    settings.paddingX,
+    settings.paddingY,
+    settings.paddingUnit,
+    settings.opacity,
+    settings.autoResize
+  ]);
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container">
@@ -201,8 +354,8 @@ const Watermark = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Input Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          {/* Input Panel (span 2) */}
           <div className="lg:col-span-2 space-y-6">
             {/* Image Upload */}
             <div className="card p-6">
@@ -388,30 +541,35 @@ const Watermark = () => {
                   </div>
                 </div>
 
+                {/* NEW: Opacity control */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    File Prefix
+                    Opacity: {settings.opacity}%
                   </label>
-                  <input
-                    type="text"
-                    value={settings.prefix}
-                    onChange={(e) => setSettings({...settings, prefix: e.target.value})}
-                    className="input"
-                    placeholder="watermarked_"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    File Suffix
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.suffix}
-                    onChange={(e) => setSettings({...settings, suffix: e.target.value})}
-                    className="input"
-                    placeholder="_protected"
-                  />
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={settings.opacity}
+                      onChange={(e) =>
+                        setSettings({ ...settings, opacity: parseInt(e.target.value || 0, 10) })
+                      }
+                      className="w-full"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={settings.opacity}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(100, parseInt(e.target.value || 0, 10)));
+                        setSettings({ ...settings, opacity: v });
+                      }}
+                      className="input w-20"
+                    />
+                    <span className="text-sm text-gray-500">%</span>
+                  </div>
                 </div>
 
                 <div className="flex items-center">
@@ -453,6 +611,41 @@ const Watermark = () => {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+
+          {/* NEW: Live Preview Panel */}
+          <div className="space-y-6">
+            <div className="card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">Live Preview</h2>
+                <span className="text-xs text-gray-500">
+                  {previewLoading ? 'Rendering...' : (previewGrid.length > 0 ? `${previewGrid.length} preview(s)` : 'No preview')}
+                </span>
+              </div>
+
+              {previewGrid.length === 0 && !previewLoading ? (
+                <div className="text-sm text-gray-500">
+                  {images.length === 0
+                    ? 'Add images to see preview.'
+                    : watermarkMode === 'image' && !watermarkFile && !watermarkImage
+                    ? 'Select a watermark image to preview.'
+                    : 'Adjust settings to see changes.'}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {previewGrid.map((p) => (
+                    <div key={p.id} className="rounded-lg overflow-hidden border border-gray-200">
+                      <img src={p.url} alt={p.name} className="w-full object-cover" />
+                      <div className="px-2 py-1 text-xs text-gray-600 truncate">{p.name}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="mt-3 text-xs text-gray-400">
+                Preview is rendered by the server using the exact same algorithm as final processing.
+              </p>
             </div>
           </div>
         </div>
@@ -520,3 +713,4 @@ const Watermark = () => {
 };
 
 export default Watermark;
+

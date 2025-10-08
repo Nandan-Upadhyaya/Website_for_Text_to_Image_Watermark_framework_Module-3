@@ -35,6 +35,21 @@ MODULE2_PATH = Path(__file__).parent.parent.parent / "Module-2"
 if str(MODULE2_PATH) not in sys.path:
     sys.path.insert(0, str(MODULE2_PATH))
 
+# NEW: Add Watermark-UI to Python path and import WaterMarker
+WATERMARK_UI_PATH = Path(__file__).parent.parent.parent / "Watermark-UI"
+if str(WATERMARK_UI_PATH) not in sys.path:
+    sys.path.insert(0, str(WATERMARK_UI_PATH))
+
+try:
+    from FreeMark.tools.watermarker import WaterMarker
+    WATERMARK_AVAILABLE = True
+    if RUN_MAIN:
+        print(f"✅ [SERVER] WaterMarker imported from: {WATERMARK_UI_PATH}")
+except Exception as e:
+    WATERMARK_AVAILABLE = False
+    if RUN_MAIN:
+        print(f"❌ [SERVER] Failed to import WaterMarker: {e}")
+
 if RUN_MAIN:
     print(f"🔍 [SERVER] Added Module-2 path: {MODULE2_PATH}")
 
@@ -414,6 +429,377 @@ def evaluate_single_image():
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+# NEW: normalize legacy/varied payloads into a single internal format
+def _normalize_watermark_payload(payload: dict) -> dict:
+    # Some UIs send { images, options: { ... } }
+    opts = payload.get('options') or {}
+    mode = (payload.get('mode') or opts.get('mode') or 'image').strip().lower()
+    # Text mode aliases
+    text = payload.get('text') or opts.get('text') or payload.get('watermarkText') or opts.get('watermarkText')
+    text_size = payload.get('textSize') or opts.get('textSize') or payload.get('fontSize') or opts.get('fontSize') or 32
+    text_color = payload.get('textColor') or opts.get('textColor') or payload.get('color') or opts.get('color') or '#FFFFFF'
+
+    # Position/padding aliases (from UI)
+    pos = (payload.get('pos') or opts.get('pos') or payload.get('position') or opts.get('position') or 'SE').upper()
+    padx = payload.get('padx') or opts.get('padx') or (payload.get('padX') or opts.get('padX') or payload.get('xPad') or opts.get('xPad') or 20)
+    pady = payload.get('pady') or opts.get('pady') or (payload.get('padY') or opts.get('padY') or payload.get('yPad') or opts.get('yPad') or 5)
+    unit_x = payload.get('xUnit') or opts.get('xUnit') or payload.get('unitX') or opts.get('unitX') or 'px'
+    unit_y = payload.get('yUnit') or opts.get('yUnit') or payload.get('unitY') or opts.get('unitY') or 'px'
+
+    # Scale/opacity aliases
+    scale = payload.get('scale')
+    if scale is None:
+        scale = opts.get('scale')
+    if scale is None:
+        scale = payload.get('autoResizeWatermark', opts.get('autoResizeWatermark', True))
+
+    raw_opacity = payload.get('opacity')
+    if raw_opacity is None:
+        raw_opacity = opts.get('opacity')
+    if raw_opacity is None:
+        raw_opacity = payload.get('opacityPercent', opts.get('opacityPercent', 50))
+    try:
+        opacity = float(raw_opacity)
+        # Accept 0..1 or 0..100
+        if opacity > 1.0:
+            opacity = opacity / 100.0
+    except Exception:
+        opacity = 0.5
+
+    # Watermark sources (image mode)
+    wm_path = payload.get('watermarkPath') or opts.get('watermarkPath')
+    wm_data_url = payload.get('watermarkDataUrl') or opts.get('watermarkDataUrl')
+
+    # Images array might be [{url,name}, ...] or ["dataurl", ...]
+    images = payload.get('images') or []
+    norm_images = []
+    if isinstance(images, list):
+        for i, it in enumerate(images):
+            if isinstance(it, dict):
+                u = it.get('url') or it.get('dataUrl') or it.get('src')
+                n = it.get('name') or f'watermarked_{i+1}.png'
+            else:
+                u = it
+                n = f'watermarked_{i+1}.png'
+            if u:
+                norm_images.append({'url': u, 'name': n})
+
+    return {
+        'mode': mode,
+        'text': text,
+        'textSize': int(text_size),
+        'textColor': text_color,
+        'pos': pos,
+        'padding': {'x': int(padx), 'xUnit': str(unit_x), 'y': int(pady), 'yUnit': str(unit_y)},
+        'scale': bool(scale),
+        'opacity': float(opacity),
+        'watermarkPath': wm_path,
+        'watermarkDataUrl': wm_data_url,
+        'images': norm_images,
+    }
+
+# NEW: decode http(s) URLs or data/base64 into PIL
+def _decode_any_to_pil(data: str) -> PILImage.Image:
+    try:
+        s = (data or '').strip()
+        if s.startswith('http://') or s.startswith('https://'):
+            # Avoid extra deps: use urllib
+            import urllib.request
+            with urllib.request.urlopen(s, timeout=10) as resp:
+                raw = resp.read()
+            return PILImage.open(io.BytesIO(raw)).convert('RGBA')
+        # Fallback to data-url/base64 decoder
+        return _decode_data_url_to_pil(s)
+    except Exception as e:
+        raise ValueError(f"Invalid image data: {e}")
+
+@app.route('/api/watermark/test', methods=['GET'])
+def watermark_test():
+    print("🔍 [WATERMARK] /api/watermark/test OK")
+    return jsonify({'ok': True, 'ts': int(time.time())})
+
+# NEW: helpers for watermark API
+def _decode_data_url_to_pil(data_url: str) -> PILImage.Image:
+    """Decode a data URL (data:image/png;base64,...) into a PIL image"""
+    try:
+        if ',' in data_url:
+            _, b64 = data_url.split(',', 1)
+        else:
+            b64 = data_url
+        raw = base64.b64decode(b64)
+        return PILImage.open(io.BytesIO(raw)).convert("RGBA")
+    except Exception as e:
+        raise ValueError(f"Invalid image data: {e}")
+
+def _pil_to_data_url(img: PILImage.Image, fmt: str = "PNG") -> str:
+    buf = io.BytesIO()
+    img.save(buf, format=fmt)
+    return f"data:image/{fmt.lower()};base64,{base64.b64encode(buf.getvalue()).decode('utf-8')}"
+
+# PRIMARY watermark endpoint
+@app.route('/api/watermark/apply', methods=['POST', 'OPTIONS'], endpoint='watermark_apply_main')
+def apply_watermark_main():
+    """Apply watermark (image or text) to one or more images and return data URLs"""
+    # CORS preflight
+    if request.method == 'OPTIONS':
+        resp = jsonify({'message': 'CORS preflight'})
+        resp.headers.add('Access-Control-Allow-Origin', '*')
+        resp.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        resp.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        return resp
+
+    if not WATERMARK_AVAILABLE:
+        return jsonify({'error': 'WaterMarker not available on server'}), 500
+
+    # Accept JSON; log raw body length for debugging
+    try:
+        payload = request.get_json(force=True) or {}
+        print(f"🔍 [WATERMARK] Received payload: {payload}")
+    except Exception as e:
+        print(f"❌ [WATERMARK] Invalid JSON body: {e}")
+        return jsonify({'error': 'Invalid JSON body'}), 400
+
+    # Normalize payload keys from various UIs
+    norm = _normalize_watermark_payload(payload)
+
+    images = norm.get('images') or []
+    mode = norm.get('mode', 'image')
+    pos = norm.get('pos', 'SE')
+    padding = norm.get('padding') or {'x': 20, 'xUnit': 'px', 'y': 5, 'yUnit': 'px'}
+    scale = bool(norm.get('scale', True))
+    opacity = float(norm.get('opacity', 0.5))
+    text = norm.get('text')
+    text_size = int(norm.get('textSize', 32))
+    text_color = norm.get('textColor') or '#FFFFFF'
+    wm_path = norm.get('watermarkPath')
+    wm_data_url = norm.get('watermarkDataUrl')
+
+    print("🔍 [WATERMARK] /api/watermark/apply called")
+    print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, count={len(images)}")
+
+    if not isinstance(images, list) or len(images) == 0:
+        return jsonify({'error': 'images array is required'}), 400
+
+    if mode.lower() not in ('image', 'text'):
+        return jsonify({'error': "mode must be 'image' or 'text'"}), 400
+
+    # Prepare WaterMarker
+    tmp_wm_file = None
+    wm_init_path = None
+    try:
+        if mode.lower() == 'image':
+            if wm_path and os.path.isfile(wm_path):
+                wm_init_path = wm_path
+            elif wm_data_url:
+                # write to temp file
+                if ',' in wm_data_url:
+                    _, b64 = wm_data_url.split(',', 1)
+                else:
+                    b64 = wm_data_url
+                raw = base64.b64decode(b64)
+                fd, tmp_path = tempfile.mkstemp(suffix=".png")
+                os.close(fd)
+                with open(tmp_path, 'wb') as f:
+                    f.write(raw)
+                tmp_wm_file = tmp_path
+                wm_init_path = tmp_wm_file
+            else:
+                return jsonify({'error': 'watermarkPath or watermarkDataUrl required for image mode'}), 400
+        wm = WaterMarker(wm_init_path, overwrite=True)
+    except Exception as e:
+        if tmp_wm_file:
+            try: os.remove(tmp_wm_file)
+            except: pass
+        return jsonify({'error': f'Failed to initialize WaterMarker: {e}'}), 500
+
+    # Convert padding dict to tuple format expected by WaterMarker
+    try:
+        padding_tuple = ((int(padding.get('x', 20)), str(padding.get('xUnit', 'px'))),
+                         (int(padding.get('y', 5)), str(padding.get('yUnit', 'px'))))
+    except Exception:
+        return jsonify({'error': 'Invalid padding format'}), 400
+
+    out_images = []
+    try:
+        for idx, item in enumerate(images):
+            url = item.get('url')
+            name = item.get('name') or f'watermarked_{idx+1}.png'
+            if not url:
+                return jsonify({'error': f'image at index {idx} missing url'}), 400
+
+            try:
+                src = _decode_any_to_pil(url)
+            except Exception as e:
+                return jsonify({'error': f'Invalid image at index {idx}: {e}'}), 400
+
+            # Apply watermark in-memory
+            try:
+                out_pil = wm.apply_watermark_pil(
+                    pil_image=src,
+                    scale=scale,
+                    pos=pos,
+                    padding=padding_tuple,
+                    opacity=opacity,
+                    mode=mode.lower(),
+                    text=(text if mode.lower() == 'text' else None),
+                    text_size=text_size,
+                    text_color=text_color
+                )
+            except Exception as e:
+                return jsonify({'error': f'Watermarking failed at index {idx}: {e}'}), 500
+
+            out_images.append({
+                'name': name,
+                'dataUrl': _pil_to_data_url(out_pil, fmt='PNG')
+            })
+    finally:
+        # Cleanup temp watermark
+        if tmp_wm_file:
+            try: os.remove(tmp_wm_file)
+            except: pass
+
+    print(f"✅ [WATERMARK] Applied watermark to {len(out_images)} image(s)")
+    return jsonify({'images': out_images})
+
+# Aliases for compatibility
+@app.route('/api/watermark', methods=['POST', 'OPTIONS'], endpoint='watermark_apply_alias')
+def apply_watermark_alias():
+    return apply_watermark_main()
+
+@app.route('/watermark/apply', methods=['POST', 'OPTIONS'], endpoint='watermark_apply_compat')
+def apply_watermark_compat():
+    return apply_watermark_main()
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', '5001'))
+    app.run(host='0.0.0.0', port=port, debug=True, use_reloader=True)
+    port = int(os.getenv('PORT', '5001'))
+    app.run(host='0.0.0.0', port=port, debug=True, use_reloader=True)
+def apply_watermark_api():
+    """Apply watermark (image or text) to one or more images and return data URLs"""
+    # CORS preflight
+    if request.method == 'OPTIONS':
+        resp = jsonify({'message': 'CORS preflight'})
+        resp.headers.add('Access-Control-Allow-Origin', '*')
+        resp.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        resp.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        return resp
+
+    if not WATERMARK_AVAILABLE:
+        return jsonify({'error': 'WaterMarker not available on server'}), 500
+
+    # Accept JSON; log raw body length for debugging
+    try:
+        payload = request.get_json(force=True) or {}
+    except Exception:
+        print("❌ [WATERMARK] Invalid JSON body")
+        return jsonify({'error': 'Invalid JSON body'}), 400
+
+    # Normalize payload keys from various UIs
+    norm = _normalize_watermark_payload(payload)
+
+    images = norm.get('images') or []
+    mode = norm.get('mode', 'image')
+    pos = norm.get('pos', 'SE')
+    padding = norm.get('padding') or {'x': 20, 'xUnit': 'px', 'y': 5, 'yUnit': 'px'}
+    scale = bool(norm.get('scale', True))
+    opacity = float(norm.get('opacity', 0.5))
+    text = norm.get('text')
+    text_size = int(norm.get('textSize', 32))
+    text_color = norm.get('textColor') or '#FFFFFF'
+    wm_path = norm.get('watermarkPath')
+    wm_data_url = norm.get('watermarkDataUrl')
+
+    if RUN_MAIN:
+        print("🔍 [WATERMARK] /api/watermark/apply called")
+        print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, count={len(images)}")
+
+    if not isinstance(images, list) or len(images) == 0:
+        return jsonify({'error': 'images array is required'}), 400
+
+    if mode.lower() not in ('image', 'text'):
+        return jsonify({'error': "mode must be 'image' or 'text'"}), 400
+
+    # Prepare WaterMarker
+    tmp_wm_file = None
+    wm_init_path = None
+    try:
+        if mode.lower() == 'image':
+            if wm_path and os.path.isfile(wm_path):
+                wm_init_path = wm_path
+            elif wm_data_url:
+                # write to temp file
+                if ',' in wm_data_url:
+                    _, b64 = wm_data_url.split(',', 1)
+                else:
+                    b64 = wm_data_url
+                raw = base64.b64decode(b64)
+                fd, tmp_path = tempfile.mkstemp(suffix=".png")
+                os.close(fd)
+                with open(tmp_path, 'wb') as f:
+                    f.write(raw)
+                tmp_wm_file = tmp_path
+                wm_init_path = tmp_wm_file
+            else:
+                return jsonify({'error': 'watermarkPath or watermarkDataUrl required for image mode'}), 400
+        wm = WaterMarker(wm_init_path, overwrite=True)
+    except Exception as e:
+        if tmp_wm_file:
+            try: os.remove(tmp_wm_file)
+            except: pass
+        return jsonify({'error': f'Failed to initialize WaterMarker: {e}'}), 500
+
+    # Convert padding dict to tuple format expected by WaterMarker
+    try:
+        padding_tuple = ((int(padding.get('x', 20)), str(padding.get('xUnit', 'px'))),
+                         (int(padding.get('y', 5)), str(padding.get('yUnit', 'px'))))
+    except Exception:
+        return jsonify({'error': 'Invalid padding format'}), 400
+
+    out_images = []
+    try:
+        for idx, item in enumerate(images):
+            url = item.get('url')
+            name = item.get('name') or f'watermarked_{idx+1}.png'
+            if not url:
+                return jsonify({'error': f'image at index {idx} missing url'}), 400
+
+            try:
+                src = _decode_any_to_pil(url)
+            except Exception as e:
+                return jsonify({'error': f'Invalid image at index {idx}: {e}'}), 400
+
+            # Apply watermark in-memory
+            try:
+                out_pil = wm.apply_watermark_pil(
+                    pil_image=src,
+                    scale=scale,
+                    pos=pos,
+                    padding=padding_tuple,
+                    opacity=opacity,
+                    mode=mode.lower(),
+                    text=(text if mode.lower() == 'text' else None),
+                    text_size=text_size,
+                    text_color=text_color
+                )
+            except Exception as e:
+                return jsonify({'error': f'Watermarking failed at index {idx}: {e}'}), 500
+
+            out_images.append({
+                'name': name,
+                'dataUrl': _pil_to_data_url(out_pil, fmt='PNG')
+            })
+    finally:
+        # Cleanup temp watermark
+        if tmp_wm_file:
+            try: os.remove(tmp_wm_file)
+            except: pass
+
+    if RUN_MAIN:
+        print(f"✅ [WATERMARK] Applied watermark to {len(out_images)} image(s)")
+
+    return jsonify({'images': out_images})
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5001'))
