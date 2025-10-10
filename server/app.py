@@ -11,6 +11,7 @@ import time
 import numpy as np
 import cv2
 from PIL import Image as PILImage
+import re  # NEW
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -335,6 +336,20 @@ def check_setup():
         'paths': paths
     })
 
+# NEW: simple animal keyword set and helper for logging label
+_ANIMAL_KEYWORDS = {
+    'lion','tiger','leopard','cheetah','jaguar','panther','wolf','fox','bear','zebra',
+    'giraffe','elephant','rhinoceros','rhino','hippopotamus','hippo','crocodile','alligator',
+    'deer','moose','bison','buffalo','horse','cow','goat','sheep','camel','dog','puppy',
+    'cat','kitten','panda','koala','kangaroo','otter','raccoon'
+}
+def _is_animal_prompt(p: str) -> bool:
+    s = (p or '').lower()
+    cleaned = re.sub(r'[^a-z0-9\s]+', ' ', s)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    padded = f" {cleaned} "
+    return any(f" {kw} " in padded for kw in _ANIMAL_KEYWORDS)
+
 @app.route('/api/generate', methods=['POST', 'OPTIONS'])
 def generate():
     if request.method == 'OPTIONS':
@@ -391,9 +406,10 @@ def generate():
             if seeds and isinstance(seeds, list) and i < len(seeds):
                 seed = seeds[i]
 
-            # Vehicle specialized handling
-            if is_vehicle_prompt(prompt):
-                print(f"[Vehicle] Using specialized vehicle generator for: {prompt}")
+            # Vehicle specialized handling (now logs Animal/Vehicle accordingly)
+            if is_vehicle_prompt(prompt) or _is_animal_prompt(prompt):
+                label = 'Animal' if _is_animal_prompt(prompt) else 'Vehicle'
+                print(f"[{label}] Using specialized {label.lower()} generator for: {prompt}")
                 output_filename = uuid.uuid4().hex
                 img_path, vehicle_type = generate_vehicle_image(prompt, tmp_root, output_filename)
                 
@@ -596,12 +612,33 @@ def _normalize_watermark_payload(payload: dict) -> dict:
     text_size = payload.get('textSize') or opts.get('textSize') or payload.get('fontSize') or opts.get('fontSize') or 32
     text_color = payload.get('textColor') or opts.get('textColor') or payload.get('color') or opts.get('color') or '#FFFFFF'
 
-    # Position/padding aliases (from UI)
-    pos = (payload.get('pos') or opts.get('pos') or payload.get('position') or opts.get('position') or 'SE').upper()
-    padx = payload.get('padx') or opts.get('padx') or (payload.get('padX') or opts.get('padX') or payload.get('xPad') or opts.get('xPad') or 20)
-    pady = payload.get('pady') or opts.get('pady') or (payload.get('padY') or opts.get('padY') or payload.get('yPad') or opts.get('yPad') or 5)
-    unit_x = payload.get('xUnit') or opts.get('xUnit') or payload.get('unitX') or opts.get('unitX') or 'px'
-    unit_y = payload.get('yUnit') or opts.get('yUnit') or payload.get('unitY') or opts.get('unitY') or 'px'
+    # Position aliases (support center synonyms)
+    pos = (payload.get('pos') or opts.get('pos') or payload.get('position') or opts.get('position') or 'SE')
+    pos = (str(pos) or 'SE').strip().upper()
+    if pos in ('CENTER', 'CENTRE', 'MIDDLE'):
+        pos = 'C'
+
+    # Padding: prefer nested payload.padding if provided; fallback to aliases
+    p_obj = payload.get('padding') or opts.get('padding') or {}
+    if isinstance(p_obj, dict) and ('x' in p_obj or 'y' in p_obj):
+        try:
+            padx = int(p_obj.get('x', 20))
+        except Exception:
+            padx = 20
+        try:
+            pady = int(p_obj.get('y', 5))
+        except Exception:
+            pady = 5
+        unit_x = p_obj.get('xUnit') or p_obj.get('unitX') or 'px'
+        unit_y = p_obj.get('yUnit') or p_obj.get('unitY') or 'px'
+    else:
+        padx = payload.get('padx') or opts.get('padx') or (payload.get('padX') or opts.get('padX') or payload.get('xPad') or opts.get('xPad') or 20)
+        pady = payload.get('pady') or opts.get('pady') or (payload.get('padY') or opts.get('padY') or payload.get('yPad') or opts.get('yPad') or 5)
+        unit_x = payload.get('xUnit') or opts.get('xUnit') or payload.get('unitX') or opts.get('unitX') or 'px'
+        unit_y = payload.get('yUnit') or opts.get('yUnit') or payload.get('unitY') or opts.get('unitY') or 'px'
+    # Sanitize units to 'px' or '%'
+    unit_x = '%' if str(unit_x).strip().lower() in ('%', 'percent', 'percentage') else 'px'
+    unit_y = '%' if str(unit_y).strip().lower() in ('%', 'percent', 'percentage') else 'px'
 
     # Scale/opacity aliases
     scale = payload.get('scale')
@@ -647,7 +684,7 @@ def _normalize_watermark_payload(payload: dict) -> dict:
         'textSize': int(text_size),
         'textColor': text_color,
         'pos': pos,
-        'padding': {'x': int(padx), 'xUnit': str(unit_x), 'y': int(pady), 'yUnit': str(unit_y)},
+        'padding': {'x': int(padx), 'xUnit': unit_x, 'y': int(pady), 'yUnit': unit_y},
         'scale': bool(scale),
         'opacity': float(opacity),
         'watermarkPath': wm_path,
@@ -718,7 +755,7 @@ def apply_watermark_main():
     # Accept JSON; log raw body length for debugging
     try:
         payload = request.get_json(force=True) or {}
-        print(f"🔍 [WATERMARK] Received payload: {payload}")
+        # Note: removed verbose payload dump to avoid logging large base64 data
     except Exception as e:
         print(f"❌ [WATERMARK] Invalid JSON body: {e}")
         return jsonify({'error': 'Invalid JSON body'}), 400

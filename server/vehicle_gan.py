@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 from PIL import Image
+import re
 
 # Import reusable components
 from stylegan_wrapper import (_init_clip, _clip_score, _init_biggan, 
@@ -50,7 +51,45 @@ VEHICLE_CLASS_MAP = {
     "airplane": ["airliner", "warplane"],
     
     # Generic prompt fallback
-    "vehicle": ["sports car", "convertible", "pickup", "motorcycle", "mountain bike"]
+    "vehicle": ["sports car", "convertible", "pickup", "motorcycle", "mountain bike"],
+
+    # NEW: Animal mappings (ImageNet class names)
+    "lion": ["lion"],
+    "tiger": ["tiger"],
+    "leopard": ["leopard", "jaguar", "cheetah"],
+    "cheetah": ["cheetah"],
+    "jaguar": ["jaguar"],
+    "panther": ["leopard"],  # alias
+    "wolf": ["wolf"],
+    "fox": ["red fox"],
+    "bear": ["brown bear"],
+    "zebra": ["zebra"],
+    "giraffe": ["giraffe"],
+    "elephant": ["African elephant", "Indian elephant"],
+    "rhinoceros": ["rhinoceros"],
+    "rhino": ["rhinoceros"],  # alias
+    "hippopotamus": ["hippopotamus"],
+    "hippo": ["hippopotamus"],  # alias
+    "crocodile": ["crocodile"],
+    "alligator": ["American alligator"],
+    "deer": ["deer"],
+    "moose": ["moose"],
+    "bison": ["bison"],
+    "buffalo": ["water buffalo"],
+    "horse": ["horse"],
+    "cow": ["cow", "ox"],
+    "goat": ["goat"],
+    "sheep": ["ram", "bighorn"],
+    "camel": ["Arabian camel"],
+    "dog": ["Labrador retriever", "German shepherd", "Siberian husky"],
+    "puppy": ["Labrador retriever"],  # alias
+    "cat": ["tabby", "Persian cat", "Egyptian cat"],
+    "kitten": ["tabby"],  # alias
+    "panda": ["giant panda"],
+    "koala": ["koala"],
+    "kangaroo": ["kangaroo"],
+    "otter": ["otter"],
+    "raccoon": ["raccoon"],
 }
 
 # Optimal truncation values for different vehicle types
@@ -65,7 +104,45 @@ TRUNCATION_MAP = {
     "bike": 0.35,
     "bicycle": 0.35,
     "scooter": 0.4,
-    "vehicle": 0.32  # generic fallback
+    "vehicle": 0.32,  # generic fallback
+
+    # NEW: Animal defaults
+    "lion": 0.32,
+    "tiger": 0.32,
+    "leopard": 0.32,
+    "cheetah": 0.32,
+    "jaguar": 0.32,
+    "panther": 0.32,
+    "wolf": 0.34,
+    "fox": 0.34,
+    "bear": 0.34,
+    "zebra": 0.35,
+    "giraffe": 0.35,
+    "elephant": 0.36,
+    "rhinoceros": 0.36,
+    "rhino": 0.36,
+    "hippopotamus": 0.36,
+    "hippo": 0.36,
+    "crocodile": 0.36,
+    "alligator": 0.36,
+    "deer": 0.34,
+    "moose": 0.36,
+    "bison": 0.36,
+    "buffalo": 0.36,
+    "horse": 0.33,
+    "cow": 0.35,
+    "goat": 0.35,
+    "sheep": 0.35,
+    "camel": 0.36,
+    "dog": 0.33,
+    "puppy": 0.33,
+    "cat": 0.33,
+    "kitten": 0.33,
+    "panda": 0.34,
+    "koala": 0.34,
+    "kangaroo": 0.35,
+    "otter": 0.34,
+    "raccoon": 0.34,
 }
 
 # Special CLIP prompts optimized for each vehicle type
@@ -80,7 +157,45 @@ CLIP_PROMPTS = {
     "bike": "a photo of a bicycle, mountain bike, full vehicle",
     "bicycle": "a photo of a bicycle, mountain bike, full vehicle",
     "scooter": "a photo of a motor scooter, full vehicle",
-    "vehicle": "a photo of a vehicle, full view, realistic"
+    "vehicle": "a photo of a vehicle, full view, realistic",
+
+    # NEW: Animal prompts
+    "lion": "a photo of a lion, full body, realistic, in the wild",
+    "tiger": "a photo of a tiger, full body, realistic, in the jungle",
+    "leopard": "a photo of a leopard, full body, realistic",
+    "cheetah": "a photo of a cheetah, full body, realistic",
+    "jaguar": "a photo of a jaguar, full body, realistic",
+    "panther": "a photo of a black panther, full body, realistic",
+    "wolf": "a photo of a wolf, full body, realistic",
+    "fox": "a photo of a red fox, full body, realistic",
+    "bear": "a photo of a brown bear, full body, realistic",
+    "zebra": "a photo of a zebra, full body, realistic",
+    "giraffe": "a photo of a giraffe, full body, realistic",
+    "elephant": "a photo of an elephant, full body, realistic",
+    "rhinoceros": "a photo of a rhinoceros, full body, realistic",
+    "rhino": "a photo of a rhinoceros, full body, realistic",
+    "hippopotamus": "a photo of a hippopotamus, full body, realistic",
+    "hippo": "a photo of a hippopotamus, full body, realistic",
+    "crocodile": "a photo of a crocodile, full body, realistic",
+    "alligator": "a photo of an alligator, full body, realistic",
+    "deer": "a photo of a deer, full body, realistic",
+    "moose": "a photo of a moose, full body, realistic",
+    "bison": "a photo of a bison, full body, realistic",
+    "buffalo": "a photo of a water buffalo, full body, realistic",
+    "horse": "a photo of a horse, full body, realistic",
+    "cow": "a photo of a cow, full body, realistic",
+    "goat": "a photo of a goat, full body, realistic",
+    "sheep": "a photo of a sheep, full body, realistic",
+    "camel": "a photo of a camel, full body, realistic",
+    "dog": "a photo of a dog, full body, realistic",
+    "puppy": "a photo of a puppy, full body, realistic",
+    "cat": "a photo of a cat, full body, realistic",
+    "kitten": "a photo of a kitten, full body, realistic",
+    "panda": "a photo of a giant panda, full body, realistic",
+    "koala": "a photo of a koala, full body, realistic",
+    "kangaroo": "a photo of a kangaroo, full body, realistic",
+    "otter": "a photo of an otter, full body, realistic",
+    "raccoon": "a photo of a raccoon, full body, realistic",
 }
 
 class VehicleGenerator:
@@ -95,9 +210,13 @@ class VehicleGenerator:
         
     def _get_vehicle_type(self, prompt: str) -> str:
         """Extract the main vehicle type from a prompt."""
-        prompt_lower = prompt.lower()
+        prompt_lower = (prompt or '').lower()
+        # Strip punctuation and collapse whitespace so "A giraffe." -> "a giraffe"
+        cleaned = re.sub(r'[^a-z0-9\s]+', ' ', prompt_lower)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        padded = f" {cleaned} "
         for vehicle_type in VEHICLE_CLASS_MAP.keys():
-            if vehicle_type in prompt_lower:
+            if f" {vehicle_type} " in padded:
                 return vehicle_type
         return "vehicle"  # Default fallback
     
@@ -226,26 +345,33 @@ def get_vehicle_generator(device: Optional[torch.device] = None) -> VehicleGener
     return _VEHICLE_GEN
 
 def is_vehicle_prompt(prompt: str) -> bool:
-    """Check if a prompt is specifically asking for a vehicle."""
-    prompt_lower = prompt.lower().strip()
-    
-    # Check for direct vehicle type mentions
-    for vehicle_type in VEHICLE_CLASS_MAP.keys():
-        if vehicle_type in prompt_lower.split():
+    """Check if a prompt is specifically asking for a vehicle or mapped animal (BigGAN path)."""
+    prompt_lower = (prompt or '').lower()
+    # Strip punctuation and collapse spaces: "A lion." -> "a lion"
+    cleaned = re.sub(r'[^a-z0-9\s]+', ' ', prompt_lower)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    padded = f" {cleaned} "
+
+    # Match any key (vehicles + animals), including multi-word keys
+    for key in VEHICLE_CLASS_MAP.keys():
+        if f" {key} " in padded:
             return True
-            
-    # Common vehicle phrases
+
+    # Fallback common phrases (vehicles + animals)
     vehicle_phrases = [
         "a car", "the car", "a truck", "the truck",
         "a motorcycle", "the motorcycle", "a bike", "the bike",
         "a bicycle", "the bicycle", "a bus", "the bus",
-        "a vehicle", "the vehicle"
+        "a vehicle", "the vehicle",
+        # animals (explicit phrase fallback)
+        "a lion", "the lion", "a tiger", "the tiger", "a giraffe", "the giraffe",
+        "a zebra", "the zebra", "an elephant", "the elephant", "a bear", "the bear",
+        "a fox", "the fox", "a wolf", "the wolf", "a cow", "the cow", "a horse", "the horse"
     ]
-    
     for phrase in vehicle_phrases:
-        if phrase in prompt_lower:
+        if f" {phrase} " in padded:
             return True
-            
+
     return False
 
 def generate_vehicle_image(prompt: str, output_dir: str = None, output_filename: str = None, device: Optional[torch.device] = None) -> Tuple[Optional[Path], str]:

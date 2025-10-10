@@ -25,7 +25,7 @@ const Watermark = () => {
     scale: 20,
     paddingX: 5,
     paddingY: 5,
-    paddingUnit: 'percentage',
+    paddingUnit: 'px',
     autoResize: true
   });
 
@@ -106,12 +106,15 @@ const Watermark = () => {
     return await fileToDataUrl(f);
   };
   const mapPos = (p) => {
-    // Accept both human labels and codes, normalize to NW/NE/SW/SE
+    // Accept codes and human-friendly labels; normalize to NW/NE/SW/SE/C
     const v = (p || '').toUpperCase();
-    if (['NW','NE','SW','SE'].includes(v)) return v;
+    if (['NW','NE','SW','SE','C'].includes(v)) return v;
     const map = {
-      'TOP-LEFT':'NW', 'TOP RIGHT':'NE', 'TOP-RIGHT':'NE',
-      'BOTTOM-LEFT':'SW', 'BOTTOM RIGHT':'SE', 'BOTTOM-RIGHT':'SE', 'CENTER':'SE'
+      'TOP LEFT':'NW', 'TOP-LEFT':'NW',
+      'TOP RIGHT':'NE', 'TOP-RIGHT':'NE',
+      'BOTTOM LEFT':'SW', 'BOTTOM-LEFT':'SW',
+      'BOTTOM RIGHT':'SE', 'BOTTOM-RIGHT':'SE',
+      'CENTER':'C', 'CENTRE':'C', 'MIDDLE':'C'
     };
     return map[v] || 'SE';
   };
@@ -569,18 +572,19 @@ const Watermark = () => {
                     <label className="inline-flex items-center"><input type="radio" name="pos" value="NE" checked={settings.position==='NE'} onChange={()=> setSettings({...settings, position:'NE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Top right</span></label>
                     <label className="inline-flex items-center"><input type="radio" name="pos" value="SW" checked={settings.position==='SW'} onChange={()=> setSettings({...settings, position:'SW'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom left</span></label>
                     <label className="inline-flex items-center"><input type="radio" name="pos" value="SE" checked={settings.position==='SE'} onChange={()=> setSettings({...settings, position:'SE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom right</span></label>
+                    <label className="inline-flex items-center col-span-2"><input type="radio" name="pos" value="C" checked={settings.position==='C'} onChange={()=> setSettings({...settings, position:'C'})} /><span className="ml-2">Center</span></label>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Padding X: {settings.paddingX}
+                     Padding X: {settings.paddingX} (range: -30 to 50)
                     </label>
                     <input
                       type="range"
-                      min="0"
-                      max="20"
+                      min="-30"
+                      max="50"
                       value={settings.paddingX}
                       onChange={(e) => setSettings({...settings, paddingX: parseInt(e.target.value)})}
                       className="w-full"
@@ -588,18 +592,21 @@ const Watermark = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Padding Y: {settings.paddingY}
+                     Padding Y: {settings.paddingY} (range: -30 to 50)
                     </label>
                     <input
                       type="range"
-                      min="0"
-                      max="20"
+                      min="-30"
+                      max="50"
                       value={settings.paddingY}
                       onChange={(e) => setSettings({...settings, paddingY: parseInt(e.target.value)})}
                       className="w-full"
                     />
                   </div>
                 </div>
+                <div className="text-xs text-gray-500 -mt-2">
+                 Negative padding pushes the watermark further inward; positive moves it toward edges.
+               </div>
 
                 {/* NEW: Opacity control */}
                 <div>
