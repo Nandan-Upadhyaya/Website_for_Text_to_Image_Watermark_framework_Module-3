@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from './contexts/ThemeContext';
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 import Dashboard from './pages/Dashboard';
 import TextToImage from './pages/TextToImage';
 import ImageEvaluator from './pages/ImageEvaluator';
@@ -13,9 +14,9 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300 flex flex-col">
           <Navbar />
-          <main className="pt-16">
+          <main className="pt-16 flex-grow">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/generate" element={<TextToImage />} />
@@ -24,6 +25,7 @@ function App() {
               <Route path="/gallery" element={<Gallery />} />
             </Routes>
           </main>
+          <Footer />
           <Toaster 
             position="top-right"
             toastOptions={{

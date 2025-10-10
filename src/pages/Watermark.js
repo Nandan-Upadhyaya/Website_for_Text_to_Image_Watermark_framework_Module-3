@@ -348,7 +348,7 @@ const Watermark = () => {
           <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4">
             Image Watermarking
           </h1>
-          <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+          <p className="text-gray-600 dark:text-gray-400 text-lg max-w-2xl mx-auto">
             Protect your AI-generated images by adding professional watermarks. 
             Upload your images and watermark, then customize the settings.
           </p>
@@ -370,17 +370,17 @@ const Watermark = () => {
               >
                 <input {...getImageInputProps()} />
                 <CloudArrowUpIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-lg text-gray-600 mb-2">
+                <p className="text-lg text-gray-600 dark:text-gray-400 mb-2">
                   Drag & drop images here or click to select
                 </p>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-gray-400 dark:text-gray-500">
                   Support for PNG, JPG, JPEG, WebP • Multiple files allowed
                 </p>
               </div>
 
               {images.length > 0 && (
                 <div className="mt-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                     Selected Images ({images.length})
                   </h3>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -426,7 +426,7 @@ const Watermark = () => {
                       alt="Watermark" 
                       className="max-h-32 mx-auto rounded-lg"
                     />
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
                       {watermarkImage.name} • Click to replace
                     </p>
                   </div>
@@ -434,8 +434,8 @@ const Watermark = () => {
                   <div className="space-y-4">
                     <PencilSquareIcon className="w-8 h-8 text-gray-400 mx-auto" />
                     <div>
-                      <p className="text-gray-600">Select watermark image</p>
-                      <p className="text-sm text-gray-400">PNG recommended for transparency</p>
+                      <p className="text-gray-600 dark:text-gray-400">Select watermark image</p>
+                      <p className="text-sm text-gray-400 dark:text-gray-500">PNG recommended for transparency</p>
                     </div>
                   </div>
                 )}
@@ -453,24 +453,24 @@ const Watermark = () => {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Mode
                   </label>
                   <div className="flex space-x-4">
                     <label className="inline-flex items-center">
                       <input type="radio" name="wm-mode" value="image" checked={watermarkMode==='image'} onChange={() => setWatermarkMode('image')} />
-                      <span className="ml-2">Image</span>
+                      <span className="ml-2 text-gray-700 dark:text-gray-300">Image</span>
                     </label>
                     <label className="inline-flex items-center">
                       <input type="radio" name="wm-mode" value="text" checked={watermarkMode==='text'} onChange={() => setWatermarkMode('text')} />
-                      <span className="ml-2">Text</span>
+                      <span className="ml-2 text-gray-700 dark:text-gray-300">Text</span>
                     </label>
                   </div>
                 </div>
 
                 {watermarkMode === 'image' ? (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Watermark source
                     </label>
                     <input type="file" accept="image/*" onChange={(e)=> setWatermarkFile(e.target.files?.[0] || null)} />
@@ -478,20 +478,20 @@ const Watermark = () => {
                 ) : (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Text watermark
                       </label>
                       <input className="input w-full" value={watermarkText} onChange={(e)=> setWatermarkText(e.target.value)} placeholder="Enter watermark text" />
                     </div>
                     <div className="flex space-x-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                           Text size
                         </label>
                         <input type="number" min="6" className="input w-24" value={textSize} onChange={(e)=> setTextSize(parseInt(e.target.value || 0, 10))} />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                           Color (name or hex)
                         </label>
                         <input className="input w-40" value={textColor} onChange={(e)=> setTextColor(e.target.value)} placeholder="#FFFFFF or red" />
@@ -501,20 +501,20 @@ const Watermark = () => {
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Position
                   </label>
                   <div className="grid grid-cols-2 gap-2">
-                    <label className="inline-flex items-center"><input type="radio" name="pos" value="NW" checked={settings.position==='NW'} onChange={()=> setSettings({...settings, position:'NW'})} /><span className="ml-2">Top left</span></label>
-                    <label className="inline-flex items-center"><input type="radio" name="pos" value="NE" checked={settings.position==='NE'} onChange={()=> setSettings({...settings, position:'NE'})} /><span className="ml-2">Top right</span></label>
-                    <label className="inline-flex items-center"><input type="radio" name="pos" value="SW" checked={settings.position==='SW'} onChange={()=> setSettings({...settings, position:'SW'})} /><span className="ml-2">Bottom left</span></label>
-                    <label className="inline-flex items-center"><input type="radio" name="pos" value="SE" checked={settings.position==='SE'} onChange={()=> setSettings({...settings, position:'SE'})} /><span className="ml-2">Bottom right</span></label>
+                    <label className="inline-flex items-center"><input type="radio" name="pos" value="NW" checked={settings.position==='NW'} onChange={()=> setSettings({...settings, position:'NW'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Top left</span></label>
+                    <label className="inline-flex items-center"><input type="radio" name="pos" value="NE" checked={settings.position==='NE'} onChange={()=> setSettings({...settings, position:'NE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Top right</span></label>
+                    <label className="inline-flex items-center"><input type="radio" name="pos" value="SW" checked={settings.position==='SW'} onChange={()=> setSettings({...settings, position:'SW'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom left</span></label>
+                    <label className="inline-flex items-center"><input type="radio" name="pos" value="SE" checked={settings.position==='SE'} onChange={()=> setSettings({...settings, position:'SE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom right</span></label>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Padding X: {settings.paddingX}
                     </label>
                     <input
@@ -527,7 +527,7 @@ const Watermark = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Padding Y: {settings.paddingY}
                     </label>
                     <input
@@ -543,7 +543,7 @@ const Watermark = () => {
 
                 {/* NEW: Opacity control */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Opacity: {settings.opacity}%
                   </label>
                   <div className="flex items-center space-x-3">
@@ -568,7 +568,7 @@ const Watermark = () => {
                       }}
                       className="input w-20"
                     />
-                    <span className="text-sm text-gray-500">%</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">%</span>
                   </div>
                 </div>
 
@@ -580,7 +580,7 @@ const Watermark = () => {
                     onChange={(e) => setSettings({...settings, autoResize: e.target.checked})}
                     className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  <label htmlFor="autoResize" className="ml-2 text-sm text-gray-700">
+                  <label htmlFor="autoResize" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
                     Auto-resize watermark
                   </label>
                 </div>
