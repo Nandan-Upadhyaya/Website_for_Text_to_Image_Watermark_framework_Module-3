@@ -90,6 +90,11 @@ spec = importlib.util.spec_from_file_location("server_models", models_path)
 server_models = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server_models)
 init_db = server_models.init_db
+User = server_models.User
+GeneratedImage = server_models.GeneratedImage
+EvaluatedImage = server_models.EvaluatedImage
+WatermarkedImage = server_models.WatermarkedImage
+Session = server_models.Session
 
 # Load auth_routes.py explicitly
 auth_routes_path = server_dir / 'auth_routes.py'
@@ -98,11 +103,22 @@ auth_routes_module = importlib.util.module_from_spec(spec_auth)
 spec_auth.loader.exec_module(auth_routes_module)
 auth_bp = auth_routes_module.auth_bp
 
-app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000"])  # Explicit CORS for React app
+# Load gallery_routes.py explicitly
+gallery_routes_path = server_dir / 'gallery_routes.py'
+spec_gallery = importlib.util.spec_from_file_location("server_gallery_routes", gallery_routes_path)
+gallery_routes_module = importlib.util.module_from_spec(spec_gallery)
+spec_gallery.loader.exec_module(gallery_routes_module)
+gallery_bp = gallery_routes_module.gallery_bp
 
-# Register auth blueprint
+app = Flask(__name__)
+CORS(app, 
+     origins=["http://localhost:3000"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization"])  # Explicit CORS for React app
+
+# Register blueprints
 app.register_blueprint(auth_bp)
+app.register_blueprint(gallery_bp)
 
 # Initialize database on first import
 try:
@@ -112,6 +128,94 @@ try:
 except Exception as e:
     if RUN_MAIN:
         print(f"⚠️ [SERVER] Database initialization warning: {e}")
+
+# Helper function to get user from request
+def get_user_from_request():
+    """Extract user from Authorization header"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+    
+    token = auth_header.split(' ')[1]
+    user_id = User.verify_token(token)
+    
+    if not user_id:
+        return None
+    
+    session = Session()
+    try:
+        user = session.query(User).filter_by(id=user_id).first()
+        return user
+    finally:
+        session.close()
+
+# Helper function to save generated image to database
+def save_generated_image(user_id, prompt, img_path, dataset):
+    """Save generated image metadata to database"""
+    try:
+        # Create directory for permanent storage
+        generated_dir = Path(__file__).parent.parent / 'generated_images'
+        generated_dir.mkdir(exist_ok=True)
+        
+        # Generate permanent filename
+        permanent_filename = f"{uuid.uuid4().hex}.png"
+        permanent_path = generated_dir / permanent_filename
+        
+        # Copy image to permanent location
+        shutil.copy(img_path, permanent_path)
+        
+        # Save to database
+        session = Session()
+        try:
+            generated_img = GeneratedImage(
+                user_id=user_id,
+                prompt=prompt,
+                file_path=str(permanent_path),
+                dataset=dataset
+            )
+            session.add(generated_img)
+            session.commit()
+            return permanent_filename
+        finally:
+            session.close()
+    except Exception as e:
+        print(f"Error saving generated image: {e}")
+        return None
+
+# Helper function to save watermarked image to database
+def save_watermarked_image(user_id, original_path, watermarked_pil, watermark_text, position, opacity):
+    """Save watermarked image and metadata to database"""
+    try:
+        # Create directory for permanent storage
+        watermarked_dir = Path(__file__).parent.parent / 'watermarked_images'
+        watermarked_dir.mkdir(exist_ok=True)
+        
+        # Generate permanent filename
+        permanent_filename = f"{uuid.uuid4().hex}.png"
+        permanent_path = watermarked_dir / permanent_filename
+        
+        # Save watermarked PIL image
+        watermarked_pil.save(permanent_path, 'PNG')
+        
+        # Save to database
+        session = Session()
+        try:
+            watermarked_img = WatermarkedImage(
+                user_id=user_id,
+                original_image_path=original_path,
+                watermarked_image_path=str(permanent_path),
+                watermark_text=watermark_text,
+                watermark_position=position,
+                watermark_opacity=int(opacity * 100)  # Convert to percentage
+            )
+            session.add(watermarked_img)
+            session.commit()
+            return permanent_filename
+        finally:
+            session.close()
+    except Exception as e:
+        print(f"Error saving watermarked image: {e}")
+        return None
 
 # Global variables
 LAST_GEN = {"ts": 0, "prompt": "", "images": []}
@@ -240,7 +344,7 @@ def generate():
         })
         response.headers.add('Access-Control-Allow-Origin', '*')
         response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         return response
 
     data = request.get_json()
@@ -253,6 +357,13 @@ def generate():
 
     if not prompt:
         return jsonify({'error': 'Prompt is required'}), 400
+    
+    # Get authenticated user (optional - anonymous generation still allowed)
+    current_user = get_user_from_request()
+    if current_user:
+        print(f"🔍 [GENERATE] Authenticated user detected: {current_user.email}")
+    else:
+        print(f"🔍 [GENERATE] No authenticated user (anonymous generation)")
 
     try:
         script_path = ensure_paths_ok()
@@ -272,6 +383,7 @@ def generate():
 
     tmp_root = Path(tempfile.gettempdir()) / f'dfgan_{uuid.uuid4().hex}'
     images_b64: List[str] = []
+    generated_paths: List[Path] = []  # Store paths for saving to database
 
     try:
         for i in range(batch_size):
@@ -287,6 +399,7 @@ def generate():
                 
                 if img_path and os.path.exists(str(img_path)):
                     images_b64.append(encode_b64(img_path))
+                    generated_paths.append(img_path)
                     print(f"Vehicle image generated: {img_path} (type: {vehicle_type})")
                 else:
                     print("Vehicle generation failed, falling back to DF-GAN")
@@ -296,6 +409,7 @@ def generate():
                         steps, guidance
                     )
                     images_b64.append(encode_b64(img_path))
+                    generated_paths.append(img_path)
             else:
                 img_path = dfgan_generate(
                     prompt, model_key, tmp_root,
@@ -315,6 +429,7 @@ def generate():
                     cv2.imwrite(str(img_path), cv2.cvtColor(blended_img, cv2.COLOR_RGB2BGR))
 
                 images_b64.append(encode_b64(img_path))
+                generated_paths.append(img_path)
 
     except Exception as e:
         import traceback
@@ -322,6 +437,15 @@ def generate():
         shutil.rmtree(tmp_root, ignore_errors=True)
         return jsonify({'error': str(e)}), 500
 
+    # Save images to database for authenticated users
+    if current_user:
+        try:
+            for img_path in generated_paths:
+                save_generated_image(current_user.id, prompt, img_path, dataset or model_key)
+            print(f"✅ Saved {len(generated_paths)} images to gallery for user {current_user.email}")
+        except Exception as e:
+            print(f"⚠️ Failed to save images to gallery: {e}")
+    
     # Publish event, cleanup, response
     try:
         LAST_GEN["ts"] = int(time.time() * 1000)
@@ -578,11 +702,18 @@ def apply_watermark_main():
         resp = jsonify({'message': 'CORS preflight'})
         resp.headers.add('Access-Control-Allow-Origin', '*')
         resp.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        resp.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        resp.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         return resp
 
     if not WATERMARK_AVAILABLE:
         return jsonify({'error': 'WaterMarker not available on server'}), 500
+    
+    # Get authenticated user (optional - anonymous watermarking still allowed)
+    current_user = get_user_from_request()
+    if current_user:
+        print(f"🔍 [WATERMARK] Authenticated user detected: {current_user.email}")
+    else:
+        print(f"🔍 [WATERMARK] No authenticated user (anonymous watermarking)")
 
     # Accept JSON; log raw body length for debugging
     try:
@@ -681,6 +812,20 @@ def apply_watermark_main():
             except Exception as e:
                 return jsonify({'error': f'Watermarking failed at index {idx}: {e}'}), 500
 
+            # Save to database if user is authenticated
+            if current_user:
+                try:
+                    save_watermarked_image(
+                        user_id=current_user.id,
+                        original_path=name,
+                        watermarked_pil=out_pil,
+                        watermark_text=text if mode.lower() == 'text' else 'Image watermark',
+                        position=pos,
+                        opacity=opacity
+                    )
+                except Exception as e:
+                    print(f"⚠️ Failed to save watermarked image to gallery: {e}")
+            
             out_images.append({
                 'name': name,
                 'dataUrl': _pil_to_data_url(out_pil, fmt='PNG')
@@ -691,7 +836,10 @@ def apply_watermark_main():
             try: os.remove(tmp_wm_file)
             except: pass
 
-    print(f"✅ [WATERMARK] Applied watermark to {len(out_images)} image(s)")
+    if current_user and len(out_images) > 0:
+        print(f"✅ [WATERMARK] Applied watermark to {len(out_images)} image(s) and saved to gallery for user {current_user.email}")
+    else:
+        print(f"✅ [WATERMARK] Applied watermark to {len(out_images)} image(s)")
     return jsonify({'images': out_images})
 
 # Aliases for compatibility

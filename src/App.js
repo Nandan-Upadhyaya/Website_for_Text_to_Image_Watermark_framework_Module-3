@@ -10,7 +10,7 @@ import Dashboard from './pages/Dashboard';
 import TextToImage from './pages/TextToImage';
 import ImageEvaluator from './pages/ImageEvaluator';
 import Watermark from './pages/Watermark';
-import Gallery from './pages/Gallery';
+import UserGallery from './pages/UserGallery';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 
@@ -27,7 +27,7 @@ function AppContent() {
             <Route path="/generate" element={<TextToImage />} />
             <Route path="/evaluate" element={<ImageEvaluator />} />
             <Route path="/watermark" element={<Watermark />} />
-            <Route path="/gallery" element={<Gallery />} />
+            <Route path="/gallery" element={<UserGallery />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
           </Routes>

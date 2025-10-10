@@ -11,7 +11,8 @@ import {
   PlayIcon,
   PauseIcon,
   TrophyIcon,
-  ArrowDownTrayIcon
+  ArrowDownTrayIcon,
+  PaintBrushIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 // NEW: navigate to Watermark page after selection
@@ -427,6 +428,70 @@ const ImageEvaluator = () => {
     link.click();
     document.body.removeChild(link);
     toast.success('Downloading recommended image!');
+  };
+
+  const handleSaveToGallery = async () => {
+    const token = localStorage.getItem('ai_image_suite_auth_token');
+    if (!token) {
+      toast.error('Please sign in to save images');
+      return;
+    }
+
+    if (!image || !evaluation) {
+      toast.error('No evaluated image to save');
+      return;
+    }
+
+    try {
+      // Extract base64 data from the data URL
+      const base64Data = image.preview.split(',')[1];
+      
+      const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
+      const response = await fetch(`${API_BASE}/api/gallery/save-evaluated`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          imageData: base64Data,
+          originalName: image.file?.name || 'evaluated_image.png',
+          prompt: prompt,
+          score: evaluation.percentageMatch
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save image');
+      }
+
+      toast.success('Evaluated image saved to gallery!');
+    } catch (error) {
+      console.error('Save error:', error);
+      toast.error(error.message || 'Failed to save image');
+    }
+  };
+
+  const handleAddWatermark = () => {
+    if (!image) {
+      toast.error('No image to watermark');
+      return;
+    }
+
+    // Store the evaluated image data for the Watermark page to pick up
+    sessionStorage.setItem('watermarkSelectionData', JSON.stringify({
+      images: [{
+        url: image.preview,
+        name: image.file?.name || 'evaluated_image.png',
+        id: Date.now()
+      }],
+      source: 'evaluator'
+    }));
+
+    // Navigate to watermark page
+    navigate('/watermark');
+    toast.success('Image sent to watermark page!');
   };
 
   const getQualityColor = (quality) => {
@@ -1188,6 +1253,28 @@ const ImageEvaluator = () => {
                       </div>
                     </div>
                   )}
+                  
+                  {/* Action Buttons */}
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      onClick={handleSaveToGallery}
+                      className="flex-1 px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center space-x-2"
+                      title="Save this evaluated image to your gallery"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                      </svg>
+                      <span>Save to Gallery</span>
+                    </button>
+                    <button
+                      onClick={handleAddWatermark}
+                      className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center space-x-2"
+                      title="Add watermark to this image"
+                    >
+                      <PaintBrushIcon className="w-5 h-5" />
+                      <span>Add Watermark</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Keyword Analysis - ADD KEY PROP */}

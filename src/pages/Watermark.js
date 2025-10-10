@@ -162,10 +162,17 @@ const Watermark = () => {
         payload.textColor = textColor || '#FFFFFF';
       }
 
+      // Get token for authenticated requests (optional - saves to gallery if logged in)
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+      
       // Call backend
       const res = await fetch('/api/watermark/apply', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -206,6 +213,45 @@ const Watermark = () => {
       link.click();
     });
     toast.success('Download started for all images');
+  };
+
+  const handleSaveToGallery = async (image) => {
+    const token = localStorage.getItem('ai_image_suite_auth_token');
+    if (!token) {
+      toast.error('Please sign in to save images');
+      return;
+    }
+
+    try {
+      // Extract base64 data from the data URL
+      const base64Data = image.downloadUrl.split(',')[1];
+      
+      const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
+      const response = await fetch(`${API_BASE}/api/gallery/save-watermarked`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          imageData: base64Data,
+          originalName: image.originalName,
+          watermarkText: watermarkText,
+          watermarkPosition: settings.position,
+          watermarkOpacity: settings.opacity
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save image');
+      }
+
+      toast.success('Watermarked image saved to gallery!');
+    } catch (error) {
+      console.error('Save error:', error);
+      toast.error(error.message || 'Failed to save image');
+    }
   };
 
   // NEW: import selected images from TextToImage via sessionStorage
@@ -297,9 +343,17 @@ const Watermark = () => {
           setPreviewLoading(false);
           return;
         }
+        
+        // Get token for authenticated requests (optional - saves to gallery if logged in)
+        const token = localStorage.getItem('token');
+        const headers = {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        };
+        
         const res = await fetch('/api/watermark/apply', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify(payload),
           signal: controller.signal
         });
@@ -695,18 +749,30 @@ const Watermark = () => {
                     <p className="text-xs text-gray-500">
                       Original: {image.originalName}
                     </p>
-                    <button
-                      onClick={() => {
-                        const link = document.createElement('a');
-                        link.href = image.downloadUrl;
-                        link.download = image.processedName;
-                        link.click();
-                      }}
-                      className="btn-secondary w-full text-sm flex items-center justify-center space-x-1"
-                    >
-                      <DocumentArrowDownIcon className="w-4 h-4" />
-                      <span>Download</span>
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = image.downloadUrl;
+                          link.download = image.processedName;
+                          link.click();
+                        }}
+                        className="btn-secondary flex-1 text-sm flex items-center justify-center space-x-1"
+                      >
+                        <DocumentArrowDownIcon className="w-4 h-4" />
+                        <span>Download</span>
+                      </button>
+                      <button
+                        onClick={() => handleSaveToGallery(image)}
+                        className="bg-primary-600 hover:bg-primary-700 text-white flex-1 text-sm px-3 py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
+                        title="Save to your gallery"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                        </svg>
+                        <span>Save</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
