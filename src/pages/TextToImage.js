@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PhotoIcon, SparklesIcon, AdjustmentsHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useAuth } from '../contexts/AuthContext';
 
 const TextToImage = () => {
   const [prompt, setPrompt] = useState('');
@@ -23,6 +24,7 @@ const TextToImage = () => {
   const [selectingForDownload, setSelectingForDownload] = useState(false);
   const [selectedForDownload, setSelectedForDownload] = useState(new Set());
   const navigate = useNavigate();
+  const { requireAuth } = useAuth();
 
   const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
 
@@ -76,6 +78,10 @@ const TextToImage = () => {
     
     checkServer();
   }, [API_BASE]);
+
+  const handleGenerateClick = () => {
+    requireAuth(handleGenerate);
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -343,7 +349,7 @@ const TextToImage = () => {
               </div>
 
               <button
-                onClick={handleGenerate}
+                onClick={handleGenerateClick}
                 disabled={isGenerating || !prompt.trim()}
                 className="btn-primary w-full flex items-center justify-center space-x-2"
               >

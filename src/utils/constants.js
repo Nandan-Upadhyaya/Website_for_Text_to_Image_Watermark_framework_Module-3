@@ -155,7 +155,32 @@ export const STORAGE_KEYS = {
   GENERATED_IMAGES: 'ai_image_suite_generated_images',
   EVALUATION_HISTORY: 'ai_image_suite_evaluation_history',
   WATERMARK_SETTINGS: 'ai_image_suite_watermark_settings',
-  RECENT_PROMPTS: 'ai_image_suite_recent_prompts'
+  RECENT_PROMPTS: 'ai_image_suite_recent_prompts',
+  AUTH_TOKEN: 'ai_image_suite_auth_token',
+  USER_INFO: 'ai_image_suite_user_info'
+};
+
+// Authentication Configuration
+export const AUTH_CONFIG = {
+  MIN_PASSWORD_LENGTH: 6,
+  TOKEN_EXPIRY_DAYS: 7
+};
+
+// Authentication Messages
+export const AUTH_MESSAGES = {
+  LOGIN_SUCCESS: 'Login successful!',
+  LOGIN_ERROR: 'Login failed. Please check your credentials.',
+  LOGOUT_SUCCESS: 'Logged out successfully',
+  SIGNUP_SUCCESS: 'Account created successfully!',
+  SIGNUP_ERROR: 'Failed to create account. Please try again.',
+  SESSION_EXPIRED: 'Your session has expired. Please login again.',
+  INVALID_EMAIL: 'Please enter a valid email address',
+  PASSWORD_TOO_SHORT: `Password must be at least 6 characters long`,
+  PASSWORD_MISMATCH: 'Passwords do not match',
+  GOOGLE_SIGNIN_ERROR: 'Google sign-in failed. Please try again.',
+  GOOGLE_SIGNIN_CANCELLED: 'Google sign-in was cancelled',
+  NETWORK_ERROR: 'Network error. Please check your connection.',
+  UNAUTHORIZED: 'You must be logged in to access this page'
 };
 
 // Color Schemes

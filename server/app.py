@@ -78,8 +78,40 @@ from vehicle_gan import is_vehicle_prompt, generate_vehicle_image
 from stylegan_wrapper import StyleGANGenerator
 from blend_utils import blend_images
 
+# Import auth routes - use importlib to avoid conflict with DF-GAN models
+import importlib.util
+from pathlib import Path
+
+server_dir = Path(__file__).parent
+
+# Load models.py explicitly
+models_path = server_dir / 'models.py'
+spec = importlib.util.spec_from_file_location("server_models", models_path)
+server_models = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server_models)
+init_db = server_models.init_db
+
+# Load auth_routes.py explicitly
+auth_routes_path = server_dir / 'auth_routes.py'
+spec_auth = importlib.util.spec_from_file_location("server_auth_routes", auth_routes_path)
+auth_routes_module = importlib.util.module_from_spec(spec_auth)
+spec_auth.loader.exec_module(auth_routes_module)
+auth_bp = auth_routes_module.auth_bp
+
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000"])  # Explicit CORS for React app
+
+# Register auth blueprint
+app.register_blueprint(auth_bp)
+
+# Initialize database on first import
+try:
+    init_db()
+    if RUN_MAIN:
+        print("✅ [SERVER] Database initialized successfully")
+except Exception as e:
+    if RUN_MAIN:
+        print(f"⚠️ [SERVER] Database initialization warning: {e}")
 
 # Global variables
 LAST_GEN = {"ts": 0, "prompt": "", "images": []}

@@ -9,8 +9,10 @@ import {
   PhotoIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { useAuth } from '../contexts/AuthContext';
 
 const Watermark = () => {
+  const { requireAuth } = useAuth();
   const [images, setImages] = useState([]);
   const [watermarkImage, setWatermarkImage] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -114,6 +116,10 @@ const Watermark = () => {
     return map[v] || 'SE';
   };
   const mapUnit = (u) => (u === '%' || (u || '').toLowerCase().startsWith('per')) ? '%' : 'px';
+
+  const handleProcessClick = () => {
+    requireAuth(handleProcess);
+  };
 
   const handleProcess = async () => {
     if (images.length === 0) {
@@ -587,7 +593,7 @@ const Watermark = () => {
               </div>
 
               <button
-                onClick={handleProcess}
+                onClick={handleProcessClick}
                 // Enable button in text mode even without a watermark image/file
                 disabled={
                   isProcessing ||

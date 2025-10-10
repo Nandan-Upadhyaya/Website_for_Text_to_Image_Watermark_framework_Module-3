@@ -16,8 +16,10 @@ import {
 import toast from 'react-hot-toast';
 // NEW: navigate to Watermark page after selection
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const ImageEvaluator = () => {
+  const { requireAuth } = useAuth();
   const [image, setImage] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [isEvaluating, setIsEvaluating] = useState(false);
@@ -350,6 +352,10 @@ const ImageEvaluator = () => {
   };
 
   // Enhanced handleEvaluate to work with manual evaluation
+  const handleEvaluateClick = () => {
+    requireAuth(handleEvaluate);
+  };
+
   const handleEvaluate = async () => {
     console.log("🔍 [FRONTEND] Starting evaluation...");
     
@@ -981,7 +987,7 @@ const ImageEvaluator = () => {
               </div>
 
               <button
-                onClick={handleEvaluate}
+                onClick={handleEvaluateClick}
                 disabled={(isEvaluating || isAutoEvaluating) || !image || !prompt.trim()}
                 className="btn-primary w-full flex items-center justify-center space-x-2"
               >
