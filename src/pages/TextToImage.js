@@ -139,6 +139,31 @@ const TextToImage = () => {
       setGeneratedImages(prev => [...images, ...prev]);
       toast.success(`Generated ${images.length} image(s) successfully!`);
       
+      // Auto-save to gallery if user is authenticated
+      const authToken = localStorage.getItem('ai_image_suite_auth_token');
+      if (authToken) {
+        // Save all generated images to gallery
+        images.forEach(async (image) => {
+          try {
+            const base64Data = image.url.split(',')[1];
+            await fetch(`${API_BASE}/api/gallery/save-generated`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+              },
+              body: JSON.stringify({
+                imageData: base64Data,
+                prompt: image.prompt,
+                dataset: image.settings.dataset
+              })
+            });
+          } catch (error) {
+            console.error('Failed to auto-save image to gallery:', error);
+          }
+        });
+      }
+      
       // NEW: Trigger auto-evaluation suggestion after 1.5 seconds
       setTimeout(() => {
         setPendingEvaluationData({
@@ -153,43 +178,6 @@ const TextToImage = () => {
       toast.error(error.message || 'Failed to generate images. Please try again.');
     } finally {
       setIsGenerating(false);
-    }
-  };
-
-  // NEW: Save image to gallery
-  const handleSaveToGallery = async (image) => {
-    const token = localStorage.getItem('ai_image_suite_auth_token');
-    if (!token) {
-      toast.error('Please sign in to save images');
-      return;
-    }
-
-    try {
-      // Extract base64 data from the data URL
-      const base64Data = image.url.split(',')[1];
-      
-      const response = await fetch(`${API_BASE}/api/gallery/save-generated`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          imageData: base64Data,
-          prompt: image.prompt,
-          dataset: image.settings.dataset
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to save image');
-      }
-
-      toast.success('Image saved to gallery!');
-    } catch (error) {
-      console.error('Save error:', error);
-      toast.error(error.message || 'Failed to save image');
     }
   };
 
@@ -557,23 +545,10 @@ const TextToImage = () => {
                   <p className="text-sm text-gray-600 line-clamp-2 mb-2">
                     "{image.prompt}"
                   </p>
-                  <div className="flex justify-between items-center text-xs text-gray-500 mb-3">
+                  <div className="flex justify-between items-center text-xs text-gray-500">
                     <span>{image.settings.dataset}</span>
                     <span>{image.createdAt.toLocaleTimeString()}</span>
                   </div>
-                  {/* Save to Gallery button */}
-                  {!isAnySelecting && (
-                    <button
-                      onClick={() => handleSaveToGallery(image)}
-                      className="w-full px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center space-x-2"
-                      title="Save to your gallery"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                      </svg>
-                      <span>Save to Gallery</span>
-                    </button>
-                  )}
                 </div>
               ))}
             </div>

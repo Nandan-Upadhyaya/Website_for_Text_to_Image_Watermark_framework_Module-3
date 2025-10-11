@@ -161,6 +161,75 @@ const UserGallery = () => {
     }
   };
 
+  const deleteAllImages = async () => {
+    const imageCount = stats[activeTab] || 0;
+    
+    if (imageCount === 0) {
+      toast.error('No images to delete');
+      return;
+    }
+
+    const confirmMessage = `Are you sure you want to delete ALL ${imageCount} ${activeTab} images? This action cannot be undone.`;
+    
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('ai_image_suite_auth_token');
+      
+      if (!token) {
+        toast.error('Please sign in to delete images');
+        return;
+      }
+      
+      const endpoint = `${API_BASE}/api/gallery/${activeTab}/delete-all`;
+      
+      console.log('Deleting all images:', { 
+        endpoint, 
+        activeTab,
+        count: imageCount,
+        hasToken: !!token,
+        API_BASE 
+      });
+      
+      const response = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      console.log('Delete all response:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(`Successfully deleted ${data.count} images!`);
+        // Refresh the images and stats
+        await fetchImages();
+        await fetchStats();
+      } else {
+        let errorMessage = 'Failed to delete images';
+        try {
+          const data = await response.json();
+          console.error('Delete all failed:', data);
+          errorMessage = data.error || data.message || errorMessage;
+        } catch (e) {
+          console.error('Could not parse error response:', e);
+        }
+        toast.error(errorMessage);
+      }
+    } catch (error) {
+      console.error('Error deleting all images:', error);
+      toast.error('Network error: ' + error.message);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -284,6 +353,19 @@ const UserGallery = () => {
             </button>
           </nav>
         </div>
+
+        {/* Delete All Button */}
+        {images.length > 0 && (
+          <div className="mb-6 flex justify-end">
+            <button
+              onClick={deleteAllImages}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
+            >
+              <TrashIcon className="h-5 w-5 mr-2" />
+              Delete All {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Images
+            </button>
+          </div>
+        )}
 
         {/* Images Grid */}
         {loading ? (

@@ -525,3 +525,153 @@ def delete_evaluated_image(image_id):
         return jsonify({'error': f'Error deleting image: {str(e)}'}), 500
     finally:
         session.close()
+
+@gallery_bp.route('/api/gallery/generated/delete-all', methods=['DELETE'])
+def delete_all_generated_images():
+    """Delete all generated images from user's gallery"""
+    print(f"🗑️ DELETE ALL request received for generated images")
+    
+    user = get_user_from_token()
+    print(f"🔐 User from token: {user.email if user else 'None'}")
+    
+    if not user:
+        print("❌ Unauthorized: No valid user token")
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    session = Session()
+    try:
+        # Find all images for this user
+        images = session.query(GeneratedImage).filter_by(user_id=user.id).all()
+        count = len(images)
+        
+        print(f"📊 Found {count} generated images to delete for user {user.email}")
+        
+        # Delete all files from filesystem
+        deleted_files = 0
+        for image in images:
+            try:
+                if image.file_path and os.path.exists(image.file_path):
+                    os.remove(image.file_path)
+                    deleted_files += 1
+            except Exception as e:
+                print(f"Error deleting file {image.file_path}: {e}")
+        
+        # Delete all from database
+        session.query(GeneratedImage).filter_by(user_id=user.id).delete()
+        session.commit()
+        
+        print(f"✅ Deleted {count} generated images from database, {deleted_files} files from filesystem")
+        
+        return jsonify({
+            'message': f'Successfully deleted {count} generated images',
+            'count': count
+        }), 200
+        
+    except Exception as e:
+        print(f"Error deleting all generated images: {e}")
+        import traceback
+        traceback.print_exc()
+        session.rollback()
+        return jsonify({'error': f'Error deleting images: {str(e)}'}), 500
+    finally:
+        session.close()
+
+@gallery_bp.route('/api/gallery/watermarked/delete-all', methods=['DELETE'])
+def delete_all_watermarked_images():
+    """Delete all watermarked images from user's gallery"""
+    print(f"🗑️ DELETE ALL request received for watermarked images")
+    
+    user = get_user_from_token()
+    print(f"🔐 User from token: {user.email if user else 'None'}")
+    
+    if not user:
+        print("❌ Unauthorized: No valid user token")
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    session = Session()
+    try:
+        # Find all images for this user
+        images = session.query(WatermarkedImage).filter_by(user_id=user.id).all()
+        count = len(images)
+        
+        print(f"📊 Found {count} watermarked images to delete for user {user.email}")
+        
+        # Delete all files from filesystem
+        deleted_files = 0
+        for image in images:
+            try:
+                if image.watermarked_image_path and os.path.exists(image.watermarked_image_path):
+                    os.remove(image.watermarked_image_path)
+                    deleted_files += 1
+            except Exception as e:
+                print(f"Error deleting file {image.watermarked_image_path}: {e}")
+        
+        # Delete all from database
+        session.query(WatermarkedImage).filter_by(user_id=user.id).delete()
+        session.commit()
+        
+        print(f"✅ Deleted {count} watermarked images from database, {deleted_files} files from filesystem")
+        
+        return jsonify({
+            'message': f'Successfully deleted {count} watermarked images',
+            'count': count
+        }), 200
+        
+    except Exception as e:
+        print(f"Error deleting all watermarked images: {e}")
+        import traceback
+        traceback.print_exc()
+        session.rollback()
+        return jsonify({'error': f'Error deleting images: {str(e)}'}), 500
+    finally:
+        session.close()
+
+@gallery_bp.route('/api/gallery/evaluated/delete-all', methods=['DELETE'])
+def delete_all_evaluated_images():
+    """Delete all evaluated images from user's gallery"""
+    print(f"🗑️ DELETE ALL request received for evaluated images")
+    
+    user = get_user_from_token()
+    print(f"🔐 User from token: {user.email if user else 'None'}")
+    
+    if not user:
+        print("❌ Unauthorized: No valid user token")
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    session = Session()
+    try:
+        # Find all images for this user
+        images = session.query(EvaluatedImage).filter_by(user_id=user.id).all()
+        count = len(images)
+        
+        print(f"📊 Found {count} evaluated images to delete for user {user.email}")
+        
+        # Delete all files from filesystem
+        deleted_files = 0
+        for image in images:
+            try:
+                if image.evaluated_image_path and os.path.exists(image.evaluated_image_path):
+                    os.remove(image.evaluated_image_path)
+                    deleted_files += 1
+            except Exception as e:
+                print(f"Error deleting file {image.evaluated_image_path}: {e}")
+        
+        # Delete all from database
+        session.query(EvaluatedImage).filter_by(user_id=user.id).delete()
+        session.commit()
+        
+        print(f"✅ Deleted {count} evaluated images from database, {deleted_files} files from filesystem")
+        
+        return jsonify({
+            'message': f'Successfully deleted {count} evaluated images',
+            'count': count
+        }), 200
+        
+    except Exception as e:
+        print(f"Error deleting all evaluated images: {e}")
+        import traceback
+        traceback.print_exc()
+        session.rollback()
+        return jsonify({'error': f'Error deleting images: {str(e)}'}), 500
+    finally:
+        session.close()

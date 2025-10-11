@@ -18,19 +18,24 @@ export const AuthProvider = ({ children }) => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogout = useCallback((showToast = true) => {
+  const handleLogout = useCallback((showToast = true, reason = '') => {
     signOut(auth).catch((error) => {
       console.error('Firebase sign-out error:', error);
     });
 
     localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.USER_INFO);
+    localStorage.removeItem('last_activity_time');
 
     setCurrentUser(null);
     setAuthError('');
 
     if (showToast) {
-      toast.success(AUTH_MESSAGES.LOGOUT_SUCCESS);
+      if (reason === 'timeout') {
+        toast.error('Session expired due to inactivity. Please login again.');
+      } else {
+        toast.success(AUTH_MESSAGES.LOGOUT_SUCCESS);
+      }
     }
 
     navigate('/login');
@@ -74,6 +79,88 @@ export const AuthProvider = ({ children }) => {
     
     setLoading(false);
   }, [handleLogout, verifyToken]);
+
+  // 30-minute session timeout effect
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const TIMEOUT_DURATION = 30 * 60 * 1000; // 30 minutes in milliseconds
+    let timeoutId;
+
+    const updateLastActivity = () => {
+      localStorage.setItem('last_activity_time', Date.now().toString());
+    };
+
+    const checkInactivity = () => {
+      const lastActivity = parseInt(localStorage.getItem('last_activity_time') || Date.now());
+      const currentTime = Date.now();
+      const inactiveTime = currentTime - lastActivity;
+
+      if (inactiveTime >= TIMEOUT_DURATION) {
+        handleLogout(true, 'timeout');
+      }
+    };
+
+    // Initialize last activity time
+    updateLastActivity();
+
+    // Set up interval to check inactivity every minute
+    const intervalId = setInterval(checkInactivity, 60000);
+
+    // Track user activity
+    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    
+    const handleActivity = () => {
+      updateLastActivity();
+      // Reset timeout on activity
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handleLogout(true, 'timeout');
+      }, TIMEOUT_DURATION);
+    };
+
+    // Add event listeners
+    activityEvents.forEach(event => {
+      window.addEventListener(event, handleActivity);
+    });
+
+    // Set initial timeout
+    timeoutId = setTimeout(() => {
+      handleLogout(true, 'timeout');
+    }, TIMEOUT_DURATION);
+
+    // Cleanup
+    return () => {
+      clearTimeout(timeoutId);
+      clearInterval(intervalId);
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, handleActivity);
+      });
+    };
+  }, [currentUser, handleLogout]);
+
+  // Logout on tab close effect
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleBeforeUnload = (e) => {
+      // Clear auth tokens on tab close
+      localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+      localStorage.removeItem(STORAGE_KEYS.USER_INFO);
+      localStorage.removeItem('last_activity_time');
+      
+      // Sign out from Firebase
+      signOut(auth).catch((error) => {
+        console.error('Firebase sign-out error on tab close:', error);
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [currentUser]);
 
   const handleLogin = async (email, password) => {
     try {
