@@ -260,59 +260,51 @@ const UserGallery = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <SparklesIcon className="h-8 w-8 text-blue-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 mb-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-blue-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                   Generated
                 </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">
                   {stats.generated}
                 </p>
               </div>
+              <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded-full">
+                <SparklesIcon className="h-8 w-8 text-blue-500" />
+              </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <PhotoIcon className="h-8 w-8 text-green-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-green-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                   Evaluated
                 </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">
                   {stats.evaluated}
                 </p>
               </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <PaintBrushIcon className="h-8 w-8 text-purple-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Watermarked
-                </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {stats.watermarked}
-                </p>
+              <div className="bg-green-100 dark:bg-green-900 p-3 rounded-full">
+                <PhotoIcon className="h-8 w-8 text-green-500" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <PhotoIcon className="h-8 w-8 text-indigo-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Total
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-purple-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  Watermarked
                 </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {stats.total}
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                  {stats.watermarked}
                 </p>
+              </div>
+              <div className="bg-purple-100 dark:bg-purple-900 p-3 rounded-full">
+                <PaintBrushIcon className="h-8 w-8 text-purple-500" />
               </div>
             </div>
           </div>
@@ -320,7 +312,7 @@ const UserGallery = () => {
 
         {/* Tabs */}
         <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
-          <nav className="-mb-px flex space-x-8">
+          <nav className="-mb-px flex space-x-4 sm:space-x-8">
             <button
               onClick={() => { setActiveTab('generated'); setPage(1); }}
               className={`${

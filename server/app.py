@@ -603,7 +603,7 @@ def _normalize_watermark_payload(payload: dict) -> dict:
     unit_x = payload.get('xUnit') or opts.get('xUnit') or payload.get('unitX') or opts.get('unitX') or 'px'
     unit_y = payload.get('yUnit') or opts.get('yUnit') or payload.get('unitY') or opts.get('unitY') or 'px'
 
-    # Scale/opacity aliases
+    # Scale/opacity/rotation aliases
     scale = payload.get('scale')
     if scale is None:
         scale = opts.get('scale')
@@ -622,6 +622,20 @@ def _normalize_watermark_payload(payload: dict) -> dict:
             opacity = opacity / 100.0
     except Exception:
         opacity = 0.5
+
+    # Rotation can be provided as degrees; accept string or number
+    raw_rotation = payload.get('rotation')
+    if raw_rotation is None:
+        raw_rotation = opts.get('rotation')
+    try:
+        rotation = int(float(raw_rotation)) if raw_rotation is not None else 0
+        # Clamp to -180..180 to avoid odd behavior
+        if rotation < -180:
+            rotation = -180
+        if rotation > 180:
+            rotation = 180
+    except Exception:
+        rotation = 0
 
     # Watermark sources (image mode)
     wm_path = payload.get('watermarkPath') or opts.get('watermarkPath')
@@ -650,6 +664,7 @@ def _normalize_watermark_payload(payload: dict) -> dict:
         'padding': {'x': int(padx), 'xUnit': str(unit_x), 'y': int(pady), 'yUnit': str(unit_y)},
         'scale': bool(scale),
         'opacity': float(opacity),
+        'rotation': int(rotation),
         'watermarkPath': wm_path,
         'watermarkDataUrl': wm_data_url,
         'images': norm_images,
@@ -732,6 +747,7 @@ def apply_watermark_main():
     padding = norm.get('padding') or {'x': 20, 'xUnit': 'px', 'y': 5, 'yUnit': 'px'}
     scale = bool(norm.get('scale', True))
     opacity = float(norm.get('opacity', 0.5))
+    rotation = int(norm.get('rotation', 0))
     text = norm.get('text')
     text_size = int(norm.get('textSize', 32))
     text_color = norm.get('textColor') or '#FFFFFF'
@@ -739,7 +755,7 @@ def apply_watermark_main():
     wm_data_url = norm.get('watermarkDataUrl')
 
     print("🔍 [WATERMARK] /api/watermark/apply called")
-    print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, count={len(images)}")
+    print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, rotation={rotation}, count={len(images)}")
 
     if not isinstance(images, list) or len(images) == 0:
         return jsonify({'error': 'images array is required'}), 400
@@ -807,7 +823,8 @@ def apply_watermark_main():
                     mode=mode.lower(),
                     text=(text if mode.lower() == 'text' else None),
                     text_size=text_size,
-                    text_color=text_color
+                    text_color=text_color,
+                    rotation=rotation
                 )
             except Exception as e:
                 return jsonify({'error': f'Watermarking failed at index {idx}: {e}'}), 500
@@ -885,6 +902,7 @@ def apply_watermark_api():
     padding = norm.get('padding') or {'x': 20, 'xUnit': 'px', 'y': 5, 'yUnit': 'px'}
     scale = bool(norm.get('scale', True))
     opacity = float(norm.get('opacity', 0.5))
+    rotation = int(norm.get('rotation', 0))
     text = norm.get('text')
     text_size = int(norm.get('textSize', 32))
     text_color = norm.get('textColor') or '#FFFFFF'
@@ -893,7 +911,7 @@ def apply_watermark_api():
 
     if RUN_MAIN:
         print("🔍 [WATERMARK] /api/watermark/apply called")
-        print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, count={len(images)}")
+        print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, rotation={rotation}, count={len(images)}")
 
     if not isinstance(images, list) or len(images) == 0:
         return jsonify({'error': 'images array is required'}), 400
@@ -961,7 +979,8 @@ def apply_watermark_api():
                     mode=mode.lower(),
                     text=(text if mode.lower() == 'text' else None),
                     text_size=text_size,
-                    text_color=text_color
+                    text_color=text_color,
+                    rotation=rotation
                 )
             except Exception as e:
                 return jsonify({'error': f'Watermarking failed at index {idx}: {e}'}), 500
