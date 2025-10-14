@@ -23,7 +23,7 @@ Base = declarative_base()
 
 # JWT Secret Key
 JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'development-secret-key')
-JWT_ACCESS_TOKEN_EXPIRES = datetime.timedelta(days=1)
+JWT_ACCESS_TOKEN_EXPIRES = datetime.timedelta(minutes=30)  # 30 minutes session timeout
 
 class User(Base):
     __tablename__ = 'users'
