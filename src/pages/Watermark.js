@@ -25,6 +25,9 @@ const Watermark = () => {
     scale: 20,
     paddingX: 5,
     paddingY: 5,
+    paddingUnit: 'percentage',
+    autoResize: true,
+    rotation: 0 // rotation angle in degrees (0-360)
     paddingUnit: 'px',
     autoResize: true
   });
@@ -148,7 +151,8 @@ const Watermark = () => {
         pos: mapPos(settings.position),
         padding: { x: parseInt(settings.paddingX || 0, 10), xUnit: unit, y: parseInt(settings.paddingY || 0, 10), yUnit: unit },
         scale: !!settings.autoResize,
-        opacity: opacityFactor
+        opacity: opacityFactor,
+        rotation: parseInt(settings.rotation || 0, 10)
       };
       // NEW: add top-level padding aliases for backend normalizer
       payload.padx = parseInt(settings.paddingX || 0, 10);
@@ -171,6 +175,13 @@ const Watermark = () => {
         'Content-Type': 'application/json',
         ...(token && { 'Authorization': `Bearer ${token}` })
       };
+      
+      console.log('🚀 [WATERMARK] Sending payload to backend:', {
+        mode: payload.mode,
+        rotation: payload.rotation,
+        opacity: payload.opacity,
+        position: payload.pos
+      });
       
       // Call backend
       const res = await fetch('/api/watermark/apply', {
@@ -291,7 +302,8 @@ const Watermark = () => {
         yUnit: unit
       },
       scale: !!settings.autoResize,
-      opacity: opacityFactor
+      opacity: opacityFactor,
+      rotation: parseInt(settings.rotation || 0, 10)
     };
     // NEW: add top-level padding aliases for backend normalizer
     payload.padx = parseInt(settings.paddingX || 0, 10);
@@ -337,22 +349,29 @@ const Watermark = () => {
         }
         
         // Get token for authenticated requests (optional - saves to gallery if logged in)
+        const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
         const token = localStorage.getItem('token');
         const headers = {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` })
         };
         
-        const res = await fetch('/api/watermark/apply', {
+        console.log('🔍 [PREVIEW] Calling watermark preview API...', { API_BASE, imageCount: payload.images.length });
+        
+        const res = await fetch(`${API_BASE}/api/watermark/apply`, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(payload),
           signal: controller.signal
         });
+        
+        console.log('🔍 [PREVIEW] API response status:', res.status);
+        
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (!res.ok || data.error) {
           // On preview error, just clear previews silently
+          console.warn('⚠️ [PREVIEW] API error:', data.error || `HTTP ${res.status}`);
           setPreviewGrid([]);
           setPreviewLoading(false);
           return;
@@ -363,9 +382,13 @@ const Watermark = () => {
           name: subset[i]?.name || `image_${i + 1}.png`,
           url: out.dataUrl
         }));
+        console.log('✅ [PREVIEW] Preview generated successfully:', thumbs.length, 'images');
         setPreviewGrid(thumbs);
       } catch (e) {
-        if (!cancelled) setPreviewGrid([]);
+        if (!cancelled) {
+          console.error('❌ [PREVIEW] Preview failed:', e);
+          setPreviewGrid([]);
+        }
       } finally {
         if (!cancelled) setPreviewLoading(false);
       }
@@ -389,7 +412,8 @@ const Watermark = () => {
     settings.paddingY,
     settings.paddingUnit,
     settings.opacity,
-    settings.autoResize
+    settings.autoResize,
+    settings.rotation
   ]);
 
   return (
@@ -406,9 +430,9 @@ const Watermark = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Input Panel (span 2) */}
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Input Panel */}
+          <div className="space-y-6">
             {/* Image Upload */}
             <div className="card p-6">
               <h2 className="text-xl font-semibold mb-4 flex items-center space-x-2">
@@ -561,7 +585,6 @@ const Watermark = () => {
                     <label className="inline-flex items-center"><input type="radio" name="pos" value="NE" checked={settings.position==='NE'} onChange={()=> setSettings({...settings, position:'NE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Top right</span></label>
                     <label className="inline-flex items-center"><input type="radio" name="pos" value="SW" checked={settings.position==='SW'} onChange={()=> setSettings({...settings, position:'SW'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom left</span></label>
                     <label className="inline-flex items-center"><input type="radio" name="pos" value="SE" checked={settings.position==='SE'} onChange={()=> setSettings({...settings, position:'SE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom right</span></label>
-                    <label className="inline-flex items-center col-span-2"><input type="radio" name="pos" value="C" checked={settings.position==='C'} onChange={()=> setSettings({...settings, position:'C'})} /><span className="ml-2">Center</span></label>
                   </div>
                 </div>
 
@@ -572,7 +595,7 @@ const Watermark = () => {
                     </label>
                     <input
                       type="range"
-                      min="-30"
+                      min="0"
                       max="50"
                       value={settings.paddingX}
                       onChange={(e) => setSettings({...settings, paddingX: parseInt(e.target.value)})}
@@ -585,7 +608,7 @@ const Watermark = () => {
                     </label>
                     <input
                       type="range"
-                      min="-30"
+                      min="0"
                       max="50"
                       value={settings.paddingY}
                       onChange={(e) => setSettings({...settings, paddingY: parseInt(e.target.value)})}
@@ -626,6 +649,70 @@ const Watermark = () => {
                     />
                     <span className="text-sm text-gray-500 dark:text-gray-400">%</span>
                   </div>
+                </div>
+
+                {/* NEW: Rotation control */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Rotation: {settings.rotation}°
+                  </label>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="range"
+                      min="-180"
+                      max="180"
+                      value={settings.rotation}
+                      onChange={(e) =>
+                        setSettings({ ...settings, rotation: parseInt(e.target.value || 0, 10) })
+                      }
+                      className="w-full"
+                    />
+                    <input
+                      type="number"
+                      min="-180"
+                      max="180"
+                      value={settings.rotation}
+                      onChange={(e) => {
+                        const v = Math.max(-180, Math.min(180, parseInt(e.target.value || 0, 10)));
+                        setSettings({ ...settings, rotation: v });
+                      }}
+                      className="input w-20"
+                    />
+                    <span className="text-sm text-gray-500 dark:text-gray-400">°</span>
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSettings({ ...settings, rotation: 0 })}
+                      className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                    >
+                      0°
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettings({ ...settings, rotation: 45 })}
+                      className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                    >
+                      45°
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettings({ ...settings, rotation: 90 })}
+                      className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                    >
+                      90°
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettings({ ...settings, rotation: -45 })}
+                      className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                    >
+                      -45°
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Positive values rotate clockwise, negative values counter-clockwise
+                  </p>
                 </div>
 
                 <div className="flex items-center">
@@ -769,4 +856,3 @@ const Watermark = () => {
 };
 
 export default Watermark;
-

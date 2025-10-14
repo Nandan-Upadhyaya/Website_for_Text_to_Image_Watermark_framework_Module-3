@@ -194,13 +194,6 @@ const Gallery = () => {
           </div>
         </div>
 
-        {/* Results Count */}
-        <div className="flex justify-between items-center mb-6">
-          <p className="text-gray-600">
-            {filteredImages.length} image{filteredImages.length !== 1 ? 's' : ''} found
-          </p>
-        </div>
-
         {/* Gallery Grid */}
         {filteredImages.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

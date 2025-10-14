@@ -640,7 +640,7 @@ def _normalize_watermark_payload(payload: dict) -> dict:
     unit_x = '%' if str(unit_x).strip().lower() in ('%', 'percent', 'percentage') else 'px'
     unit_y = '%' if str(unit_y).strip().lower() in ('%', 'percent', 'percentage') else 'px'
 
-    # Scale/opacity aliases
+    # Scale/opacity/rotation aliases
     scale = payload.get('scale')
     if scale is None:
         scale = opts.get('scale')
@@ -659,6 +659,20 @@ def _normalize_watermark_payload(payload: dict) -> dict:
             opacity = opacity / 100.0
     except Exception:
         opacity = 0.5
+
+    # Rotation can be provided as degrees; accept string or number
+    raw_rotation = payload.get('rotation')
+    if raw_rotation is None:
+        raw_rotation = opts.get('rotation')
+    try:
+        rotation = int(float(raw_rotation)) if raw_rotation is not None else 0
+        # Clamp to -180..180 to avoid odd behavior
+        if rotation < -180:
+            rotation = -180
+        if rotation > 180:
+            rotation = 180
+    except Exception:
+        rotation = 0
 
     # Watermark sources (image mode)
     wm_path = payload.get('watermarkPath') or opts.get('watermarkPath')
@@ -687,6 +701,7 @@ def _normalize_watermark_payload(payload: dict) -> dict:
         'padding': {'x': int(padx), 'xUnit': unit_x, 'y': int(pady), 'yUnit': unit_y},
         'scale': bool(scale),
         'opacity': float(opacity),
+        'rotation': int(rotation),
         'watermarkPath': wm_path,
         'watermarkDataUrl': wm_data_url,
         'images': norm_images,
@@ -730,6 +745,232 @@ def _pil_to_data_url(img: PILImage.Image, fmt: str = "PNG") -> str:
     img.save(buf, format=fmt)
     return f"data:image/{fmt.lower()};base64,{base64.b64encode(buf.getvalue()).decode('utf-8')}"
 
+# INVISIBLE watermark endpoint (DWT-DCT based)
+@app.route('/api/watermark/apply-invisible', methods=['POST', 'OPTIONS'], endpoint='watermark_apply_invisible')
+def apply_invisible_watermark():
+    """Apply invisible watermark using DWT-DCT technique"""
+    # CORS preflight
+    if request.method == 'OPTIONS':
+        resp = jsonify({'message': 'CORS preflight'})
+        resp.headers.add('Access-Control-Allow-Origin', '*')
+        resp.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        resp.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        return resp
+
+    try:
+        from invisible_watermark import apply_invisible_watermark as apply_invisible_wm
+    except ImportError:
+        return jsonify({'error': 'Invisible watermarking not available. Install required packages: pywt, scipy, scikit-image'}), 500
+
+    # Get current user if authenticated
+    current_user = None
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        try:
+            current_user = get_current_user_from_token(token)
+        except:
+            pass
+
+    try:
+        payload = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({'error': 'Invalid JSON body'}), 400
+
+    images = payload.get('images', [])
+    watermark_mode = payload.get('watermarkMode', 'text')  # 'text' or 'image'
+    watermark_text = payload.get('watermarkText', '')
+    watermark_data_url = payload.get('watermarkDataUrl')
+    alpha = float(payload.get('alpha', 0.28))  # Embedding strength
+
+    print(f"🔍 [INVISIBLE WATERMARK] Processing {len(images)} image(s), mode={watermark_mode}")
+
+    if not isinstance(images, list) or len(images) == 0:
+        return jsonify({'error': 'images array is required'}), 400
+
+    if watermark_mode not in ('text', 'image'):
+        return jsonify({'error': "watermarkMode must be 'text' or 'image'"}), 400
+
+    if watermark_mode == 'text' and not watermark_text:
+        return jsonify({'error': 'watermarkText required for text mode'}), 400
+
+    if watermark_mode == 'image' and not watermark_data_url:
+        return jsonify({'error': 'watermarkDataUrl required for image mode'}), 400
+
+    # Prepare watermark image if in image mode
+    watermark_pil = None
+    if watermark_mode == 'image':
+        try:
+            watermark_pil = _decode_any_to_pil(watermark_data_url)
+        except Exception as e:
+            return jsonify({'error': f'Invalid watermark image: {e}'}), 400
+
+    out_images = []
+    try:
+        for idx, item in enumerate(images):
+            url = item.get('url')
+            name = item.get('name') or f'invisible_watermarked_{idx+1}.png'
+            if not url:
+                return jsonify({'error': f'image at index {idx} missing url'}), 400
+
+            try:
+                src = _decode_any_to_pil(url)
+            except Exception as e:
+                return jsonify({'error': f'Invalid image at index {idx}: {e}'}), 400
+
+            # Apply invisible watermark
+            try:
+                out_pil = apply_invisible_wm(
+                    host_pil_image=src,
+                    watermark_mode=watermark_mode,
+                    watermark_text=watermark_text if watermark_mode == 'text' else None,
+                    watermark_pil_image=watermark_pil if watermark_mode == 'image' else None,
+                    alpha=alpha
+                )
+            except Exception as e:
+                return jsonify({'error': f'Invisible watermarking failed at index {idx}: {e}'}), 500
+
+            # Save to database if user is authenticated
+            if current_user:
+                try:
+                    save_watermarked_image(
+                        user_id=current_user.id,
+                        original_path=name,
+                        watermarked_pil=out_pil,
+                        watermark_text=f"Invisible: {watermark_text if watermark_mode == 'text' else 'Image'}",
+                        position='invisible',
+                        opacity=1.0
+                    )
+                except Exception as e:
+                    print(f"⚠️ Failed to save watermarked image to gallery: {e}")
+
+            out_images.append({
+                'name': name,
+                'dataUrl': _pil_to_data_url(out_pil, fmt='PNG')
+            })
+
+    except Exception as e:
+        return jsonify({'error': f'Processing failed: {e}'}), 500
+
+    if current_user and len(out_images) > 0:
+        print(f"✅ [INVISIBLE WATERMARK] Applied invisible watermark to {len(out_images)} image(s) for user {current_user.email}")
+    else:
+        print(f"✅ [INVISIBLE WATERMARK] Applied invisible watermark to {len(out_images)} image(s)")
+    
+    return jsonify({'images': out_images})
+
+
+# ROBUSTNESS testing endpoint for invisible watermarks
+@app.route('/api/watermark/test-robustness', methods=['POST', 'OPTIONS'], endpoint='watermark_test_robustness')
+def test_invisible_watermark_robustness():
+    """Test robustness of invisible watermark against various attacks"""
+    # CORS preflight
+    if request.method == 'OPTIONS':
+        resp = jsonify({'message': 'CORS preflight'})
+        resp.headers.add('Access-Control-Allow-Origin', '*')
+        resp.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        resp.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        return resp
+
+    try:
+        from invisible_watermark import apply_invisible_watermark as apply_invisible_wm, test_watermark_robustness
+    except ImportError:
+        return jsonify({'error': 'Invisible watermarking not available. Install required packages: pywt, scipy, scikit-image'}), 500
+
+    # Get current user if authenticated
+    current_user = None
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        try:
+            from models import User
+            user_data = User.verify_token(token)
+            if user_data:
+                current_user = User.query.filter_by(email=user_data['email']).first()
+        except Exception as e:
+            print(f"⚠️ Token verification failed: {e}")
+
+    try:
+        payload = request.get_json(force=True) or {}
+        images = payload.get('images', [])
+        watermark_mode = payload.get('watermarkMode', 'text')
+        watermark_text = payload.get('watermarkText', '')
+        watermark_data_url = payload.get('watermarkDataUrl', '')
+        alpha = float(payload.get('invisibleAlpha', 0.28))
+
+        if not images:
+            return jsonify({'error': 'No images provided'}), 400
+
+        if watermark_mode not in ['text', 'image']:
+            return jsonify({'error': 'Invalid watermark mode. Use "text" or "image".'}), 400
+
+        print(f"🧪 [ROBUSTNESS TEST] Starting robustness test for {len(images)} image(s)")
+        print(f"   Mode: {watermark_mode}, Alpha: {alpha}")
+
+        # Process only the first image for robustness testing
+        first_image = images[0]
+        name = first_image.get('name', 'test')
+        data_url = first_image.get('dataUrl', '')
+
+        if not data_url:
+            return jsonify({'error': 'Image data missing'}), 400
+
+        # Decode base64 image
+        from io import BytesIO
+        if ',' in data_url:
+            data_url = data_url.split(',', 1)[1]
+        img_bytes = base64.b64decode(data_url)
+        img_pil = PILImage.open(BytesIO(img_bytes))
+
+        # Prepare watermark
+        watermark_pil = None
+        if watermark_mode == 'image':
+            if not watermark_data_url:
+                return jsonify({'error': 'Watermark image is required for image mode'}), 400
+            if ',' in watermark_data_url:
+                watermark_data_url = watermark_data_url.split(',', 1)[1]
+            wm_bytes = base64.b64decode(watermark_data_url)
+            watermark_pil = PILImage.open(BytesIO(wm_bytes))
+        else:  # text mode
+            if not watermark_text:
+                return jsonify({'error': 'Watermark text is required for text mode'}), 400
+
+        # First, apply the watermark
+        watermarked_pil = apply_invisible_wm(
+            host_pil_image=img_pil,
+            watermark_mode=watermark_mode,
+            watermark_text=watermark_text if watermark_mode == 'text' else None,
+            watermark_pil_image=watermark_pil if watermark_mode == 'image' else None,
+            alpha=alpha
+        )
+
+        # Now test robustness
+        test_results = test_watermark_robustness(
+            watermarked_pil_image=watermarked_pil,
+            watermark_mode=watermark_mode,
+            watermark_text=watermark_text if watermark_mode == 'text' else None,
+            watermark_pil_image=watermark_pil if watermark_mode == 'image' else None,
+            alpha=alpha
+        )
+
+        print(f"✅ [ROBUSTNESS TEST] Completed {len(test_results['results'])} robustness tests")
+
+        return jsonify({
+            'success': True,
+            'results': test_results['results'],
+            'original_image': test_results['original_image'],
+            'watermark_size': test_results['watermark_size'],
+            'redundancy': test_results['redundancy'],
+            'alpha': test_results['alpha'],
+            'image_name': name
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Robustness testing failed: {e}'}), 500
+
+
 # PRIMARY watermark endpoint
 @app.route('/api/watermark/apply', methods=['POST', 'OPTIONS'], endpoint='watermark_apply_main')
 def apply_watermark_main():
@@ -769,6 +1010,7 @@ def apply_watermark_main():
     padding = norm.get('padding') or {'x': 20, 'xUnit': 'px', 'y': 5, 'yUnit': 'px'}
     scale = bool(norm.get('scale', True))
     opacity = float(norm.get('opacity', 0.5))
+    rotation = int(norm.get('rotation', 0))
     text = norm.get('text')
     text_size = int(norm.get('textSize', 32))
     text_color = norm.get('textColor') or '#FFFFFF'
@@ -776,7 +1018,7 @@ def apply_watermark_main():
     wm_data_url = norm.get('watermarkDataUrl')
 
     print("🔍 [WATERMARK] /api/watermark/apply called")
-    print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, count={len(images)}")
+    print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, rotation={rotation}, count={len(images)}")
 
     if not isinstance(images, list) or len(images) == 0:
         return jsonify({'error': 'images array is required'}), 400
@@ -833,19 +1075,58 @@ def apply_watermark_main():
             except Exception as e:
                 return jsonify({'error': f'Invalid image at index {idx}: {e}'}), 400
 
-            # Apply watermark in-memory
+            # Apply watermark in-memory with rotation support
             try:
-                out_pil = wm.apply_watermark_pil(
-                    pil_image=src,
-                    scale=scale,
-                    pos=pos,
-                    padding=padding_tuple,
-                    opacity=opacity,
-                    mode=mode.lower(),
-                    text=(text if mode.lower() == 'text' else None),
-                    text_size=text_size,
-                    text_color=text_color
-                )
+                # If rotation is needed, we need to manually handle watermark application
+                if rotation and rotation != 0:
+                    # Prepare the watermark (image or text)
+                    image = src.convert("RGBA")
+                    
+                    if mode.lower() == "text" and text:
+                        # Create text watermark
+                        watermark_copy = wm.create_text_watermark(text, text_size, text_color, opacity)
+                    else:
+                        # Image watermark
+                        if scale and (not wm.previous_size or wm.previous_size != image.size):
+                            watermark_copy = wm.scale_watermark(image)
+                            needs_opacity = opacity < 1
+                        else:
+                            watermark_copy = (wm.watermark or PILImage.new("RGBA", (1, 1), (0, 0, 0, 0))).copy()
+                            needs_opacity = opacity < 1
+                        
+                        wm.previous_size = image.size
+                        
+                        if needs_opacity and watermark_copy.mode != "RGBA":
+                            watermark_copy = watermark_copy.convert("RGBA")
+                        if needs_opacity:
+                            watermark_copy = wm.change_opacity(watermark_copy, opacity)
+                    
+                    # Rotate the watermark (not the entire image!)
+                    # PIL rotates counter-clockwise by default, so negate for clockwise rotation
+                    watermark_copy = watermark_copy.rotate(-rotation, expand=True, fillcolor=(0, 0, 0, 0))
+                    
+                    # Get position and apply
+                    x, y = wm.get_watermark_position(image, watermark_copy, pos=pos, padding=padding_tuple)
+                    out_pil = image.copy()
+                    try:
+                        out_pil.paste(watermark_copy, box=(x, y), mask=watermark_copy)
+                    except ValueError:
+                        out_pil.paste(watermark_copy, box=(x, y))
+                    out_pil = out_pil.convert("RGBA")
+                else:
+                    # No rotation - use standard method
+                    out_pil = wm.apply_watermark_pil(
+                        pil_image=src,
+                        scale=scale,
+                        pos=pos,
+                        padding=padding_tuple,
+                        opacity=opacity,
+                        mode=mode.lower(),
+                        text=(text if mode.lower() == 'text' else None),
+                        text_size=text_size,
+                        text_color=text_color
+                    )
+                    
             except Exception as e:
                 return jsonify({'error': f'Watermarking failed at index {idx}: {e}'}), 500
 
@@ -922,6 +1203,7 @@ def apply_watermark_api():
     padding = norm.get('padding') or {'x': 20, 'xUnit': 'px', 'y': 5, 'yUnit': 'px'}
     scale = bool(norm.get('scale', True))
     opacity = float(norm.get('opacity', 0.5))
+    rotation = int(norm.get('rotation', 0))
     text = norm.get('text')
     text_size = int(norm.get('textSize', 32))
     text_color = norm.get('textColor') or '#FFFFFF'
@@ -930,7 +1212,7 @@ def apply_watermark_api():
 
     if RUN_MAIN:
         print("🔍 [WATERMARK] /api/watermark/apply called")
-        print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, count={len(images)}")
+        print(f"🔍 [WATERMARK] mode={mode}, pos={pos}, padding={padding}, scale={scale}, opacity={opacity}, rotation={rotation}, count={len(images)}")
 
     if not isinstance(images, list) or len(images) == 0:
         return jsonify({'error': 'images array is required'}), 400
@@ -987,19 +1269,58 @@ def apply_watermark_api():
             except Exception as e:
                 return jsonify({'error': f'Invalid image at index {idx}: {e}'}), 400
 
-            # Apply watermark in-memory
+            # Apply watermark in-memory with rotation support
             try:
-                out_pil = wm.apply_watermark_pil(
-                    pil_image=src,
-                    scale=scale,
-                    pos=pos,
-                    padding=padding_tuple,
-                    opacity=opacity,
-                    mode=mode.lower(),
-                    text=(text if mode.lower() == 'text' else None),
-                    text_size=text_size,
-                    text_color=text_color
-                )
+                # If rotation is needed, we need to manually handle watermark application
+                if rotation and rotation != 0:
+                    # Prepare the watermark (image or text)
+                    image = src.convert("RGBA")
+                    
+                    if mode.lower() == "text" and text:
+                        # Create text watermark
+                        watermark_copy = wm.create_text_watermark(text, text_size, text_color, opacity)
+                    else:
+                        # Image watermark
+                        if scale and (not wm.previous_size or wm.previous_size != image.size):
+                            watermark_copy = wm.scale_watermark(image)
+                            needs_opacity = opacity < 1
+                        else:
+                            watermark_copy = (wm.watermark or PILImage.new("RGBA", (1, 1), (0, 0, 0, 0))).copy()
+                            needs_opacity = opacity < 1
+                        
+                        wm.previous_size = image.size
+                        
+                        if needs_opacity and watermark_copy.mode != "RGBA":
+                            watermark_copy = watermark_copy.convert("RGBA")
+                        if needs_opacity:
+                            watermark_copy = wm.change_opacity(watermark_copy, opacity)
+                    
+                    # Rotate the watermark (not the entire image!)
+                    # PIL rotates counter-clockwise by default, so negate for clockwise rotation
+                    watermark_copy = watermark_copy.rotate(-rotation, expand=True, fillcolor=(0, 0, 0, 0))
+                    
+                    # Get position and apply
+                    x, y = wm.get_watermark_position(image, watermark_copy, pos=pos, padding=padding_tuple)
+                    out_pil = image.copy()
+                    try:
+                        out_pil.paste(watermark_copy, box=(x, y), mask=watermark_copy)
+                    except ValueError:
+                        out_pil.paste(watermark_copy, box=(x, y))
+                    out_pil = out_pil.convert("RGBA")
+                else:
+                    # No rotation - use standard method
+                    out_pil = wm.apply_watermark_pil(
+                        pil_image=src,
+                        scale=scale,
+                        pos=pos,
+                        padding=padding_tuple,
+                        opacity=opacity,
+                        mode=mode.lower(),
+                        text=(text if mode.lower() == 'text' else None),
+                        text_size=text_size,
+                        text_color=text_color
+                    )
+                    
             except Exception as e:
                 return jsonify({'error': f'Watermarking failed at index {idx}: {e}'}), 500
 
