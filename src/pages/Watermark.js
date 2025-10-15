@@ -32,11 +32,18 @@ const Watermark = () => {
     autoResize: true
   });
 
+  const [watermarkType, setWatermarkType] = useState('visible'); // 'visible' | 'invisible'
   const [watermarkMode, setWatermarkMode] = useState('image'); // 'image' | 'text'
   const [watermarkFile, setWatermarkFile] = useState(null);
   const [watermarkText, setWatermarkText] = useState('Sample Watermark');
   const [textSize, setTextSize] = useState(32);
   const [textColor, setTextColor] = useState('#FFFFFF');
+  const [invisibleAlpha, setInvisibleAlpha] = useState(0.28); // Embedding strength for invisible watermark
+  
+  // Robustness testing states
+  const [showRobustnessModal, setShowRobustnessModal] = useState(false);
+  const [robustnessResults, setRobustnessResults] = useState(null);
+  const [isTestingRobustness, setIsTestingRobustness] = useState(false);
 
   const positions = [
     { value: 'top-left', label: 'Top Left' },
@@ -138,53 +145,73 @@ const Watermark = () => {
     }
     setIsProcessing(true);
     try {
-      // Build payload for backend
-      const unit = mapUnit(settings.paddingUnit);
-      const imgsPayload = await Promise.all(images.map(async (img, idx) => ({
-        name: img.name || `image_${idx + 1}.png`,
-        url: await imageItemToDataUrl(img)
-      })));
-      const opacityFactor = Math.max(0, Math.min(1, (settings.opacity ?? 100) / 100));
-      const payload = {
-        images: imgsPayload,
-        mode: watermarkMode === 'text' ? 'text' : 'image',
-        pos: mapPos(settings.position),
-        padding: { x: parseInt(settings.paddingX || 0, 10), xUnit: unit, y: parseInt(settings.paddingY || 0, 10), yUnit: unit },
-        scale: !!settings.autoResize,
-        opacity: opacityFactor,
-        rotation: parseInt(settings.rotation || 0, 10)
-      };
-      // NEW: add top-level padding aliases for backend normalizer
-      payload.padx = parseInt(settings.paddingX || 0, 10);
-      payload.pady = parseInt(settings.paddingY || 0, 10);
-      payload.xUnit = unit;
-      payload.yUnit = unit;
-      if (payload.mode === 'image') {
-        const wmDataUrl = await getWatermarkDataUrl();
-        if (!wmDataUrl) throw new Error('Watermark image missing');
-        payload.watermarkDataUrl = wmDataUrl;
-      } else {
-        payload.text = (watermarkText || '').trim();
-        payload.textSize = parseInt(textSize || 32, 10);
-        payload.textColor = textColor || '#FFFFFF';
-      }
-
       // Get token for authenticated requests (optional - saves to gallery if logged in)
       const token = localStorage.getItem('token');
       const headers = {
         'Content-Type': 'application/json',
         ...(token && { 'Authorization': `Bearer ${token}` })
       };
+
+      let payload, endpoint;
+      const imgsPayload = await Promise.all(images.map(async (img, idx) => ({
+        name: img.name || `image_${idx + 1}.png`,
+        url: await imageItemToDataUrl(img)
+      })));
+
+      if (watermarkType === 'invisible') {
+        // Invisible watermark payload
+        endpoint = '/api/watermark/apply-invisible';
+        payload = {
+          images: imgsPayload,
+          watermarkMode: watermarkMode, // 'text' or 'image'
+          alpha: invisibleAlpha
+        };
+        
+        if (watermarkMode === 'image') {
+          const wmDataUrl = await getWatermarkDataUrl();
+          if (!wmDataUrl) throw new Error('Watermark image missing');
+          payload.watermarkDataUrl = wmDataUrl;
+        } else {
+          payload.watermarkText = (watermarkText || '').trim();
+        }
+      } else {
+        // Visible watermark payload (existing code)
+        endpoint = '/api/watermark/apply';
+        const unit = mapUnit(settings.paddingUnit);
+        const opacityFactor = Math.max(0, Math.min(1, (settings.opacity ?? 100) / 100));
+        payload = {
+          images: imgsPayload,
+          mode: watermarkMode === 'text' ? 'text' : 'image',
+          pos: mapPos(settings.position),
+          padding: { x: parseInt(settings.paddingX || 0, 10), xUnit: unit, y: parseInt(settings.paddingY || 0, 10), yUnit: unit },
+          scale: !!settings.autoResize,
+          opacity: opacityFactor,
+          rotation: parseInt(settings.rotation || 0, 10)
+        };
+        // NEW: add top-level padding aliases for backend normalizer
+        payload.padx = parseInt(settings.paddingX || 0, 10);
+        payload.pady = parseInt(settings.paddingY || 0, 10);
+        payload.xUnit = unit;
+        payload.yUnit = unit;
+        if (payload.mode === 'image') {
+          const wmDataUrl = await getWatermarkDataUrl();
+          if (!wmDataUrl) throw new Error('Watermark image missing');
+          payload.watermarkDataUrl = wmDataUrl;
+        } else {
+          payload.text = (watermarkText || '').trim();
+          payload.textSize = parseInt(textSize || 32, 10);
+          payload.textColor = textColor || '#FFFFFF';
+        }
+      }
       
-      console.log('🚀 [WATERMARK] Sending payload to backend:', {
-        mode: payload.mode,
-        rotation: payload.rotation,
-        opacity: payload.opacity,
-        position: payload.pos
+      console.log(`🚀 [WATERMARK] Sending ${watermarkType} watermark payload to backend:`, {
+        type: watermarkType,
+        mode: watermarkMode,
+        endpoint
       });
       
       // Call backend
-      const res = await fetch('/api/watermark/apply', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(payload)
@@ -257,6 +284,73 @@ const Watermark = () => {
     toast.success('Download started for all images');
   };
 
+  const handleTestRobustness = async () => {
+    if (images.length === 0) {
+      toast.error('Please select at least one image to test');
+      return;
+    }
+    if (watermarkMode === 'image' && !(watermarkFile || watermarkImage?.file)) {
+      toast.error('Please select a watermark image');
+      return;
+    }
+    
+    setIsTestingRobustness(true);
+    try {
+      // Get token for authenticated requests
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+
+      // Prepare payload - use first image for testing
+      const firstImage = images[0];
+      const imageDataUrl = await imageItemToDataUrl(firstImage);
+      
+      const payload = {
+        images: [{
+          name: firstImage.name || 'test.png',
+          dataUrl: imageDataUrl
+        }],
+        watermarkMode: watermarkMode,
+        invisibleAlpha: invisibleAlpha
+      };
+      
+      if (watermarkMode === 'image') {
+        const wmDataUrl = await getWatermarkDataUrl();
+        if (!wmDataUrl) throw new Error('Watermark image missing');
+        payload.watermarkDataUrl = wmDataUrl;
+      } else {
+        payload.watermarkText = (watermarkText || '').trim();
+      }
+
+      const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
+      console.log('🧪 [ROBUSTNESS TEST] Starting robustness test...', { API_BASE });
+
+      const res = await fetch(`${API_BASE}/api/watermark/test-robustness`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      console.log('✅ [ROBUSTNESS TEST] Test completed:', data);
+      setRobustnessResults(data);
+      setShowRobustnessModal(true);
+      toast.success('Robustness test completed!');
+
+    } catch (err) {
+      console.error('Robustness testing failed:', err);
+      toast.error(`Failed: ${err.message}`);
+    } finally {
+      setIsTestingRobustness(false);
+    }
+  };
+
   // NEW: import selected images from TextToImage via sessionStorage
   React.useEffect(() => {
     const raw = sessionStorage.getItem('watermarkSelectionData');
@@ -282,7 +376,6 @@ const Watermark = () => {
 
   // NEW: build payload (shared shape with handleProcess)
   const buildPayload = async (useSubset = false) => {
-    const unit = mapUnit(settings.paddingUnit);
     const srcImgs = useSubset ? images.slice(0, Math.min(6, images.length)) : images;
     const imgsPayload = await Promise.all(
       srcImgs.map(async (img, idx) => ({
@@ -290,36 +383,61 @@ const Watermark = () => {
         url: await imageItemToDataUrl(img)
       }))
     );
-    const opacityFactor = Math.max(0, Math.min(1, (settings.opacity ?? 100) / 100));
-    const payload = {
-      images: imgsPayload,
-      mode: watermarkMode === 'text' ? 'text' : 'image',
-      pos: mapPos(settings.position),
-      padding: {
-        x: parseInt(settings.paddingX || 0, 10),
-        xUnit: unit,
-        y: parseInt(settings.paddingY || 0, 10),
-        yUnit: unit
-      },
-      scale: !!settings.autoResize,
-      opacity: opacityFactor,
-      rotation: parseInt(settings.rotation || 0, 10)
-    };
-    // NEW: add top-level padding aliases for backend normalizer
-    payload.padx = parseInt(settings.paddingX || 0, 10);
-    payload.pady = parseInt(settings.paddingY || 0, 10);
-    payload.xUnit = unit;
-    payload.yUnit = unit;
-    if (payload.mode === 'image') {
-      const wmDataUrl = await getWatermarkDataUrl();
-      if (!wmDataUrl) return null; // caller handles
-      payload.watermarkDataUrl = wmDataUrl;
+
+    let payload, endpoint;
+    
+    if (watermarkType === 'invisible') {
+      // Invisible watermark payload
+      endpoint = '/api/watermark/apply-invisible';
+      payload = {
+        images: imgsPayload,
+        watermarkMode: watermarkMode, // 'text' or 'image'
+        alpha: invisibleAlpha
+      };
+      
+      if (watermarkMode === 'image') {
+        const wmDataUrl = await getWatermarkDataUrl();
+        if (!wmDataUrl) return null;
+        payload.watermarkDataUrl = wmDataUrl;
+      } else {
+        payload.watermarkText = (watermarkText || '').trim();
+      }
     } else {
-      payload.text = (watermarkText || '').trim();
-      payload.textSize = parseInt(textSize || 32, 10);
-      payload.textColor = textColor || '#FFFFFF';
+      // Visible watermark payload
+      endpoint = '/api/watermark/apply';
+      const unit = mapUnit(settings.paddingUnit);
+      const opacityFactor = Math.max(0, Math.min(1, (settings.opacity ?? 100) / 100));
+      payload = {
+        images: imgsPayload,
+        mode: watermarkMode === 'text' ? 'text' : 'image',
+        pos: mapPos(settings.position),
+        padding: {
+          x: parseInt(settings.paddingX || 0, 10),
+          xUnit: unit,
+          y: parseInt(settings.paddingY || 0, 10),
+          yUnit: unit
+        },
+        scale: !!settings.autoResize,
+        opacity: opacityFactor,
+        rotation: parseInt(settings.rotation || 0, 10)
+      };
+      // NEW: add top-level padding aliases for backend normalizer
+      payload.padx = parseInt(settings.paddingX || 0, 10);
+      payload.pady = parseInt(settings.paddingY || 0, 10);
+      payload.xUnit = unit;
+      payload.yUnit = unit;
+      if (payload.mode === 'image') {
+        const wmDataUrl = await getWatermarkDataUrl();
+        if (!wmDataUrl) return null; // caller handles
+        payload.watermarkDataUrl = wmDataUrl;
+      } else {
+        payload.text = (watermarkText || '').trim();
+        payload.textSize = parseInt(textSize || 32, 10);
+        payload.textColor = textColor || '#FFFFFF';
+      }
     }
-    return payload;
+    
+    return { payload, endpoint };
   };
 
   // NEW: server-backed live preview (debounced, cancellable)
@@ -341,12 +459,14 @@ const Watermark = () => {
 
       setPreviewLoading(true);
       try {
-        const payload = await buildPayload(true);
-        if (!payload) {
+        const result = await buildPayload(true);
+        if (!result || !result.payload) {
           setPreviewGrid([]);
           setPreviewLoading(false);
           return;
         }
+        
+        const { payload, endpoint } = result;
         
         // Get token for authenticated requests (optional - saves to gallery if logged in)
         const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5001';
@@ -356,9 +476,9 @@ const Watermark = () => {
           ...(token && { 'Authorization': `Bearer ${token}` })
         };
         
-        console.log('🔍 [PREVIEW] Calling watermark preview API...', { API_BASE, imageCount: payload.images.length });
+        console.log('🔍 [PREVIEW] Calling watermark preview API...', { API_BASE, endpoint, imageCount: payload.images.length });
         
-        const res = await fetch(`${API_BASE}/api/watermark/apply`, {
+        const res = await fetch(`${API_BASE}${endpoint}`, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(payload),
@@ -401,12 +521,14 @@ const Watermark = () => {
     };
   }, [
     images,
+    watermarkType,
     watermarkMode,
     watermarkFile,
     watermarkImage,
     watermarkText,
     textSize,
     textColor,
+    invisibleAlpha,
     settings.position,
     settings.paddingX,
     settings.paddingY,
@@ -528,9 +650,46 @@ const Watermark = () => {
               </div>
 
               <div className="space-y-4">
+                {/* Watermark Type Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Mode
+                    Watermark Type
+                  </label>
+                  <div className="flex space-x-4">
+                    <label className="inline-flex items-center">
+                      <input 
+                        type="radio" 
+                        name="wm-type" 
+                        value="visible" 
+                        checked={watermarkType==='visible'} 
+                        onChange={() => setWatermarkType('visible')} 
+                        className="text-primary-600"
+                      />
+                      <span className="ml-2 text-gray-700 dark:text-gray-300">Visible</span>
+                    </label>
+                    <label className="inline-flex items-center">
+                      <input 
+                        type="radio" 
+                        name="wm-type" 
+                        value="invisible" 
+                        checked={watermarkType==='invisible'} 
+                        onChange={() => setWatermarkType('invisible')}
+                        className="text-primary-600"
+                      />
+                      <span className="ml-2 text-gray-700 dark:text-gray-300">Invisible (DWT-DCT)</span>
+                    </label>
+                  </div>
+                  {watermarkType === 'invisible' && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Invisible watermarks are embedded imperceptibly using DWT-DCT technique
+                    </p>
+                  )}
+                </div>
+
+                {/* Watermark Mode Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Watermark Content
                   </label>
                   <div className="flex space-x-4">
                     <label className="inline-flex items-center">
@@ -576,19 +735,43 @@ const Watermark = () => {
                   </>
                 )}
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Position
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="inline-flex items-center"><input type="radio" name="pos" value="NW" checked={settings.position==='NW'} onChange={()=> setSettings({...settings, position:'NW'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Top left</span></label>
-                    <label className="inline-flex items-center"><input type="radio" name="pos" value="NE" checked={settings.position==='NE'} onChange={()=> setSettings({...settings, position:'NE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Top right</span></label>
-                    <label className="inline-flex items-center"><input type="radio" name="pos" value="SW" checked={settings.position==='SW'} onChange={()=> setSettings({...settings, position:'SW'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom left</span></label>
-                    <label className="inline-flex items-center"><input type="radio" name="pos" value="SE" checked={settings.position==='SE'} onChange={()=> setSettings({...settings, position:'SE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom right</span></label>
+                {/* Invisible watermark specific settings */}
+                {watermarkType === 'invisible' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Embedding Strength (Alpha): {invisibleAlpha.toFixed(2)}
+                    </label>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="0.5"
+                      step="0.01"
+                      value={invisibleAlpha}
+                      onChange={(e) => setInvisibleAlpha(parseFloat(e.target.value))}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Higher values = stronger watermark but more visible. Default: 0.28
+                    </p>
                   </div>
-                </div>
+                )}
 
-                <div className="grid grid-cols-2 gap-4">
+                {/* Visible watermark specific settings */}
+                {watermarkType === 'visible' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Position
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="inline-flex items-center"><input type="radio" name="pos" value="NW" checked={settings.position==='NW'} onChange={()=> setSettings({...settings, position:'NW'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Top Right</span></label>
+                        <label className="inline-flex items-center"><input type="radio" name="pos" value="NE" checked={settings.position==='NE'} onChange={()=> setSettings({...settings, position:'NE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Top Left</span></label>
+                        <label className="inline-flex items-center"><input type="radio" name="pos" value="SW" checked={settings.position==='SW'} onChange={()=> setSettings({...settings, position:'SW'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom Right</span></label>
+                        <label className="inline-flex items-center"><input type="radio" name="pos" value="SE" checked={settings.position==='SE'} onChange={()=> setSettings({...settings, position:'SE'})} /><span className="ml-2 text-gray-700 dark:text-gray-300">Bottom Left</span></label>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                      Padding X: {settings.paddingX} (range: -30 to 50)
@@ -715,18 +898,20 @@ const Watermark = () => {
                   </p>
                 </div>
 
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="autoResize"
-                    checked={settings.autoResize}
-                    onChange={(e) => setSettings({...settings, autoResize: e.target.checked})}
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                  <label htmlFor="autoResize" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    Auto-resize watermark
-                  </label>
-                </div>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="autoResize"
+                        checked={settings.autoResize}
+                        onChange={(e) => setSettings({...settings, autoResize: e.target.checked})}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <label htmlFor="autoResize" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                        Auto-resize watermark
+                      </label>
+                    </div>
+                  </>
+                )}
               </div>
 
               <button
@@ -754,6 +939,34 @@ const Watermark = () => {
                   </>
                 )}
               </button>
+
+              {/* Test Robustness Button - Only show for invisible watermarks */}
+              {watermarkType === 'invisible' && (
+                <button
+                  onClick={handleTestRobustness}
+                  disabled={
+                    isTestingRobustness ||
+                    images.length === 0 ||
+                    (watermarkMode === 'image' && !watermarkImage && !watermarkFile)
+                  }
+                  className="btn-secondary w-full mt-3 flex items-center justify-center space-x-2"
+                >
+                  {isTestingRobustness ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Testing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <AdjustmentsHorizontalIcon className="w-5 h-5" />
+                      <span>Test Robustness</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
@@ -847,6 +1060,142 @@ const Watermark = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Robustness Test Results Modal */}
+        {showRobustnessModal && robustnessResults && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-semibold">Watermark Robustness Test Results</h2>
+                  <button
+                    onClick={() => setShowRobustnessModal(false)}
+                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mb-6">
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Image:</span>
+                      <span className="ml-2 font-medium">{robustnessResults.image_name}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Watermark Size:</span>
+                      <span className="ml-2 font-medium">{robustnessResults.watermark_size}×{robustnessResults.watermark_size}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Embedding Strength (α):</span>
+                      <span className="ml-2 font-medium">{robustnessResults.alpha}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Redundancy:</span>
+                      <span className="ml-2 font-medium">{robustnessResults.redundancy}</span>
+                    </div>
+                  </div>
+
+                  {robustnessResults.original_image && (
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Watermarked Image:</p>
+                      <img 
+                        src={robustnessResults.original_image} 
+                        alt="Watermarked" 
+                        className="max-w-full h-auto rounded border border-gray-300 dark:border-gray-600"
+                        style={{maxHeight: '200px', objectFit: 'contain'}}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold mb-3">Attack Test Results</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Attack Type
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            PSNR (dB)
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            NCC Score
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Status
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        {robustnessResults.results.map((result, idx) => (
+                          <tr key={idx} className={result.success ? '' : 'bg-red-50 dark:bg-red-900/20'}>
+                            <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                              {result.attack}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                              {result.attack === 'Original (No Attack)' ? 'N/A' : (
+                                <span className={
+                                  result.psnr > 40 ? 'text-green-600 dark:text-green-400' :
+                                  result.psnr > 30 ? 'text-yellow-600 dark:text-yellow-400' :
+                                  'text-red-600 dark:text-red-400'
+                                }>
+                                  {result.psnr.toFixed(2)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                              <span className={
+                                result.ncc > 0.8 ? 'text-green-600 dark:text-green-400' :
+                                result.ncc > 0.6 ? 'text-yellow-600 dark:text-yellow-400' :
+                                'text-red-600 dark:text-red-400'
+                              }>
+                                {result.ncc.toFixed(4)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {result.success ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                  ✓ Passed
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                                  ✗ Failed
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <h4 className="text-sm font-semibold mb-2 text-blue-900 dark:text-blue-100">Understanding the Results:</h4>
+                  <ul className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
+                    <li><strong>PSNR (Peak Signal-to-Noise Ratio):</strong> Measures image quality after attack. Higher is better. &gt;40 dB = Excellent, 30-40 dB = Good, &lt;30 dB = Poor</li>
+                    <li><strong>NCC (Normalized Cross-Correlation):</strong> Measures watermark detectability. &gt;0.8 = Strong, 0.6-0.8 = Moderate, &lt;0.6 = Weak/Failed</li>
+                    <li><strong>Success Threshold:</strong> NCC &gt; 0.6 indicates the watermark is still detectable after the attack</li>
+                  </ul>
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={() => setShowRobustnessModal(false)}
+                    className="btn-secondary px-6 py-2"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
