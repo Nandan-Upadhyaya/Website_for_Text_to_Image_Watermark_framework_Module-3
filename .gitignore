@@ -124,3 +124,6 @@ models/
 venv/
 __pycache__/
 _vehicle_gen_1759158141
+evaluated_images/
+generated_images/
+watermarked_images/

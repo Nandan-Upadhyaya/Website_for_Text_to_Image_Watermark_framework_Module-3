@@ -27,7 +27,7 @@ const Watermark = () => {
     paddingY: 5,
     paddingUnit: 'percentage',
     autoResize: true,
-    rotation: 0 // rotation angle in degrees (0-360)
+    rotation: 0, // rotation angle in degrees (0-360)
     paddingUnit: 'px',
     autoResize: true
   });
