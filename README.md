@@ -4,8 +4,8 @@ A comprehensive Text Prompt to Watermarked Image generation web application that
 
 1. **DF-GAN Text-to-Image Generation (Module 1)** - Generate stunning images from text descriptions
 2. **Image Prompt Evaluator (Module 2)** - Evaluate how well AI-generated images match their text prompts
-3. **Watermark Protection UI (Module 3)** - Add professional watermarks to protect your images
-4. **Website Integration (Full Suite)** - A cohesive web app that orchestrates DF-GAN generation (Module 1), CLIP-based evaluation (Module 2), and watermarking (Module 3), adding batch workflows, auto-evaluation, galleries, recommendations, and streamlined downloads.
+3. **Watermark Embedding (Both Visible and Invisible) (Module 3)** - Add professional watermarks to protect your images
+4. **Website Integration (Full Suite)** - A cohesive web app that orchestrates DF-GAN generation (Module 1), CLIP-based evaluation (Module 2), and visible and invisible watermarking mechanisms (Module 3), adding batch workflows, auto-evaluation, galleries, recommendations, and streamlined downloads.
 
 ## Features
 
@@ -24,11 +24,23 @@ A comprehensive Text Prompt to Watermarked Image generation web application that
 - Detailed feedback and suggestions
 
 ### 🛡️ Watermark Protection
-- Bulk image watermarking
-- Customizable watermark positioning and opacity
-- Auto-resizing and padding options
-- File naming with prefix/suffix support
-- Batch download functionality
+
+#### Visible Watermarking
+- Add visible watermarks (image or text) to your images in bulk.
+- **Features:**
+  - Customizable watermark positioning: Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center.
+  - Adjustable opacity (0–100%), scale (auto-resize), and rotation.
+  - Padding options (pixels or percentage) for precise placement.
+  - Batch processing with file naming options (prefix/suffix).
+  - Real-time preview and batch download functionality.
+
+#### Invisible Watermarking (DWT-DCT)
+- Embed robust, imperceptible watermarks using a hybrid **Discrete Wavelet Transform + Discrete Cosine Transform (DWT-DCT)** algorithm.
+- **Features:**
+  - Watermark can be either text or image.
+  - Watermark is binarized and adaptively resized to match the host image's capacity.
+  - High redundancy embedding for robustness against attacks.
+  - All metrics are computed and displayed in the web UI for transparency.
 
 ### 📱 Modern UI/UX
 - Responsive design for all device sizes
@@ -106,13 +118,13 @@ The `/api/check` endpoint will report any missing files or incorrect paths.
   - Purpose: Score semantic match between an image and prompt + keyword/feature analysis
 - Module 3: Watermark UI (reference implementation)
   - Github: https://github.com/The-GANners/Watermark-UI
-  - Purpose: Add batch watermarks with placement/opacity/scale controls
+  - Purpose: Add visible or invisible (text or image) watermarks to images for protection and copyright verification.
 
 ## How Each Module Works
 
 ### Module 1 — DF-GAN Text-to-Image (Standalone)
 - What it is:
-  - A text-to-image GAN that synthesizes images from natural language prompts. Training/evaluation entry points are under code/src (train.py, sample.py, test_FID.py) with YAML configs in code/cfg.
+  - A text-to-image GAN that synthesizes images from natural language prompts. 
 
 - Inputs:
   - Prompt(s): tokenized via DAMSM vocabulary.
@@ -145,7 +157,7 @@ The `/api/check` endpoint will report any missing files or incorrect paths.
 
 - Standalone repo: https://github.com/The-GANners/DF-GAN
 
-### Module 2 — CLIP-based Image Prompt Evaluator (Standalone Python)
+### Module 2 — CLIP-based Image Prompt Evaluator (Standalone)
 - What it is:
   - A Python module that evaluates image–prompt alignment using CLIP ViT-B/32, with enhanced keyword analysis, contradiction checks, and score normalization.
 
@@ -153,7 +165,6 @@ The `/api/check` endpoint will report any missing files or incorrect paths.
   - image_path: path to a PNG/JPEG/WebP image.
   - prompt: natural-language text.
   
-
 - Outputs (dict):
   - overall_score, original_score, percentage_match, original_percentage, raw_percentage
   - quality (Excellent/Good/Fair/Poor), feedback, prompt
@@ -176,38 +187,68 @@ The `/api/check` endpoint will report any missing files or incorrect paths.
 - Standalone repo: https://github.com/The-GANners/Module-2
 - Core CLIP model: https://github.com/openai/CLIP
 
-### Module 3 — Watermark UI (Standalone Desktop App)
+### Module 3 — Watermark UI (Standalone)
+
+**Visible Watermarking:**
 - What it is:
-  - A standalone Tkinter desktop application for batch watermarking images. The app provides a dark-themed UI, progress tracking, and safe overwrite behavior. 
-
-- Inputs (from the UI):
-  - Images: selected via folder picker or multiple file selection.
-  - Watermark image: chosen from disk.
-  - Options:
-    - Position: NW | NE | SW | SE
-    - Padding: ((padX, unit), (padY, unit)) where unit is "px" or "%"
-    - Opacity: 0–100% (applied as 0.0–1.0 alpha)
-    - Auto-resize watermark: on/off
-  - Output:
-    - Output directory and file renaming (prefix/postfix/none) via OutputSelector.
-    - Overwrite toggle is handled per run (confirmation if files exist).
-
+  - A standalone Tkinter desktop application for batch visible watermarking of images.
+  - Provides a dark-themed UI, drag-and-drop support, progress tracking, and safe overwrite behavior.
+- Features:
+  - Add image or text watermarks to multiple images at once.
+  - Customizable position (Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center), opacity, scale (auto-resize), rotation, and padding (px or %).
+  - Real-time preview and batch output with file renaming options.
+- Inputs:
+  - Images: selected via folder picker or multi-file selection.
+  - Watermark: image or text, with options for font, color, and size.
+  - Options: position, opacity, scale, rotation, padding, output naming.
 - Outputs:
-  - Watermarked images saved to the chosen output directory (same extension as inputs), with optional prefix/suffix renaming. No network/API involved.
+  - Watermarked images saved to the chosen output directory, with optional prefix/suffix renaming.
 
-- How it works (from code):
-  - App composition:
-    - FileSelector: collects image paths; supports folder or multi-file selection.
-    - OptionsPane: hosts WatermarkSelector, WatermarkOptions, and OutputSelector.
-    - Worker: orchestrates batch processing, threads, progress bar, time estimation.
-  - Processing loop:
-    - Gathers files into a queue, asks for overwrite if needed, then spawns a worker thread.
-    - For each image, builds output path.
-    - Tracks progress/time via RemainingTime + Pacer.
-  - Watermarking core:
-      - Scaling: scales watermark based on input aspect (landscape/portrait/square) using configurable scale factors and min/max bounds.
-      - Opacity: converts to RGBA and scales alpha channel per pixel if opacity < 1 (change_opacity).
-      - Position: computes (x,y) from pos and padding; padding supports px/% units (get_watermark_position).
-      - Caches resized watermark while processing a batch; respects overwrite flag.
-- Standalone repo: https://github.com/The-GANners/Watermark-UI 
+**Command to run the app :**
+python FreeMark.py
+
+**Invisible Watermarking (DWT-DCT):**
+
+  - Embeds a binary watermark (text or image) into the host image using a combination of Discrete Wavelet Transform (DWT) and Discrete Cosine Transform (DCT).
+  - The watermark is binarized and adapatively resized to fit the host image's embedding capacity.
+  - Embedding is performed in the DCT coefficients of the DWT-LL subband, with redundancy for robustness.
+  - Extraction is possible even after common image attacks (JPEG compression, noise, blur).
+  - **Metrics & Robustness Testing:**
+  - **Imperceptibility (PSNR):**  
+    - The system computes the Peak Signal-to-Noise Ratio (PSNR) between the original and watermarked image.
+    - High PSNR (e.g., >40 dB) means the watermark is visually imperceptible.
+    - Formula:  
+      `PSNR = 20 * log10(255.0 / sqrt(MSE))`  
+      where MSE is the mean squared error between original and watermarked images.
+  - **Robustness (NCC):**  
+    - Normalized Cross-Correlation (NCC) is computed between the original and extracted watermark.
+    - NCC close to 1.0 means the watermark is perfectly recovered.
+    - Formula:  
+      `NCC = mean(sign(original_wm) * sign(recovered_wm))`
+  - **Attack Simulation:**  
+    - Robustness is tested against common image attacks:
+      - JPEG compression (Q=85, 70, 50)
+      - Gaussian noise (σ=0.03, 0.06)
+      - Gaussian blur (σ=0.8, 1.2)
+    - The system reports PSNR and NCC for each attack, showing how well the watermark survives.
+
+- **Implementation:**
+  - Embedding and extraction are performed on the Y channel (luminance) in YCbCr color space.
+  - Watermark is embedded in DCT coefficients of DWT-LL subbands, with adaptive margin and redundancy.
+  
+- Outputs:
+  - Watermarked images and extracted watermark images saved to disk.
+  - Computed PSNR/NCC metrics for verification.
+
+  - **Command to embed watermark:**
+  python watermarkdwt.py
+
+  - **Command to verify watermark:**
+  For text watermark:
+  python verify_watermark.py -i "Watermarked-image-path" -t "Text-which-was-watermarked"
+
+  For image watermark:
+  python verify_watermark.py -o "Watermarked-image-path" -t "Path-of-image-which-was-used-as-watermark"
+
+- Standalone repo: https://github.com/The-GANners/Watermark-UI
 
