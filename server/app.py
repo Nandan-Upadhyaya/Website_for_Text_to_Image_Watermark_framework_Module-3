@@ -2,6 +2,7 @@ import base64
 import io
 import os
 import shutil
+import subprocess
 import tempfile
 import uuid
 from pathlib import Path
@@ -1168,6 +1169,56 @@ def apply_watermark_alias():
 @app.route('/watermark/apply', methods=['POST', 'OPTIONS'], endpoint='watermark_apply_compat')
 def apply_watermark_compat():
     return apply_watermark_main()
+
+# NEW: Alternative endpoint using watermarkdwt.py directly
+@app.route('/api/watermark/apply-dwt', methods=['POST'])
+def apply_watermark_dwt():
+    """Alternative endpoint using watermarkdwt.py directly"""
+    data = request.json
+    
+    try:
+        # Save images to temp files
+        temp_dir = tempfile.mkdtemp()
+        input_paths = []
+        
+        for idx, img_data in enumerate(data['images']):
+            # Decode base64
+            img_bytes = base64.b64decode(img_data['url'].split(',')[1])
+            temp_path = os.path.join(temp_dir, f'input_{idx}.png')
+            with open(temp_path, 'wb') as f:
+                f.write(img_bytes)
+            input_paths.append(temp_path)
+        
+        # Save watermark if image mode
+        if data['mode'] == 'image':
+            wm_bytes = base64.b64decode(data['watermarkDataUrl'].split(',')[1])
+            wm_path = os.path.join(temp_dir, 'watermark.png')
+            with open(wm_path, 'wb') as f:
+                f.write(wm_bytes)
+        
+        # Call watermarkdwt.py as subprocess
+        script_path = r"D:\WatermarkGAN\Watermark-UI\DWT_DCT_Watermarking\watermarkdwt.py"
+        
+        for input_path in input_paths:
+            cmd = [
+                'python', script_path,
+                '--image', input_path,
+                '--watermark_mode', data['mode'],
+                '--alpha', str(0.38)  # Your locked config
+            ]
+            
+            if data['mode'] == 'text':
+                cmd.extend(['--text', data['text']])
+            else:
+                cmd.extend(['--watermark', wm_path])
+            
+            subprocess.run(cmd, check=True)
+        
+        # Read results, encode as base64, return
+        # ... cleanup temp files
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5001'))
