@@ -963,6 +963,7 @@ def test_invisible_watermark_robustness():
             'watermark_size': test_results['watermark_size'],
             'redundancy': test_results['redundancy'],
             'alpha': test_results['alpha'],
+            'imperceptibility_psnr': test_results.get('imperceptibility_psnr'),  # <-- add this line
             'image_name': name
         })
 
